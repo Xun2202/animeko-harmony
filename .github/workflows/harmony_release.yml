@@ -1,0 +1,255 @@
+name: Harmony Release
+
+# 每天检查 Animeko 官方最新稳定版; 若本仓库还没有对应的 <tag>-harmony.<N> Release,
+# 就拉取官方源码、套用 patches/ 下的补丁、编译签名 APK 并发布. 也可手动触发指定版本.
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Animeko 官方 tag (如 v6.2.0); 留空则取最新稳定版'
+        required: false
+        type: string
+      patch_number:
+        description: 'harmony 补丁序号 (同一官方版本重新打包时递增)'
+        required: true
+        default: '1'
+        type: string
+
+concurrency:
+  group: harmony-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  UPSTREAM_REPO: open-ani/animeko
+
+jobs:
+  release:
+    name: Build and release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout patches
+        uses: actions/checkout@v4
+
+      - name: Resolve release version
+        id: version
+        env:
+          INPUT_UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+          INPUT_PATCH_NUMBER: ${{ inputs.patch_number }}
+        run: |
+          set -euo pipefail
+
+          upstream_tag="${INPUT_UPSTREAM_TAG:-}"
+          patch_number="${INPUT_PATCH_NUMBER:-1}"
+
+          if [[ -z "$upstream_tag" ]]; then
+            upstream_tag="$(gh api "repos/$UPSTREAM_REPO/releases/latest" --jq '.tag_name')"
+          fi
+
+          if [[ ! "$upstream_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported upstream tag: $upstream_tag (only stable vX.Y.Z tags are supported)" >&2
+            exit 1
+          fi
+          if [[ ! "$patch_number" =~ ^[1-9][0-9]?$ ]]; then
+            echo "Patch number must be between 1 and 99" >&2
+            exit 1
+          fi
+
+          upstream_version="${upstream_tag#v}"
+          harmony_version="${upstream_version}-harmony.${patch_number}"
+          {
+            echo "upstream_tag=$upstream_tag"
+            echo "upstream_version=$upstream_version"
+            echo "patch_number=$patch_number"
+            echo "harmony_version=$harmony_version"
+            echo "release_tag=v$harmony_version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Skip an existing release
+        id: existing
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate signing secrets
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SIGNING_KEY" ]] || { echo "Missing SIGNING_KEY secret (base64 keystore)" >&2; exit 1; }
+          [[ -n "$KEY_STORE_PASSWORD" ]] || { echo "Missing KEY_STORE_PASSWORD secret" >&2; exit 1; }
+          [[ -n "$ALIAS" ]] || { echo "Missing ALIAS secret" >&2; exit 1; }
+          [[ -n "$KEY_PASSWORD" ]] || { echo "Missing KEY_PASSWORD secret" >&2; exit 1; }
+
+      - name: Free disk space
+        if: steps.existing.outputs.skip != 'true'
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: false
+          large-packages: false
+          tool-cache: false
+
+      - name: Enable swap
+        if: steps.existing.outputs.skip != 'true'
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+
+      - name: Fetch official source
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.version.outputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+          # Android 用的 anitorrent 原生库来自 Maven, 不需要 boost 子模块.
+          git clone --depth 1 --branch "$UPSTREAM_TAG" "https://github.com/$UPSTREAM_REPO.git" "$RUNNER_TEMP/animeko"
+
+      - name: Apply Harmony patches
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.version.outputs.upstream_tag }}
+          PATCH_NUMBER: ${{ steps.version.outputs.patch_number }}
+          FORK_REPO: ${{ github.repository }}
+        run: scripts/prepare-source.sh "$RUNNER_TEMP/animeko" "$UPSTREAM_TAG" "$PATCH_NUMBER"
+
+      - name: Prepare signing key and local.properties
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/animeko"
+          printf '%s' "$SIGNING_KEY" | base64 --decode > android_signing_key
+          chmod 600 android_signing_key
+
+          {
+            echo "ani.android.abis=arm64-v8a"
+            # Temurin 的 java.vendor 是 "Eclipse Adoptium"; 官方要求 JetBrains Runtime 只是为了桌面端的 JCEF.
+            echo "jvm.toolchain.vendor=adoptium"
+            echo "jvm.toolchain.version=21"
+            echo "kotlin.native.ignoreDisabledTargets=true"
+            if [[ -n "$DANDANPLAY_APP_ID" ]]; then
+              echo "ani.dandanplay.app.id=$DANDANPLAY_APP_ID"
+              echo "ani.dandanplay.app.secret=$DANDANPLAY_APP_SECRET"
+            fi
+          } > local.properties
+
+      - name: Set up JDK 21
+        if: steps.existing.outputs.skip != 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        if: steps.existing.outputs.skip != 'true'
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build signed release APK
+        if: steps.existing.outputs.skip != 'true'
+        working-directory: ${{ runner.temp }}/animeko
+        env:
+          signing_release_storeFileFromRoot: android_signing_key
+          signing_release_storePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          signing_release_keyAlias: ${{ secrets.ALIAS }}
+          signing_release_keyPassword: ${{ secrets.KEY_PASSWORD }}
+        run: >
+          ./gradlew assembleDefaultRelease
+          --stacktrace
+          "-Porg.gradle.daemon.idletimeout=60000"
+          "-Dfile.encoding=UTF-8"
+          "-Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.daemon.jvm.options=-Xmx6g"
+          "-Dkotlin.daemon.jvm.options=-Xmx6g"
+
+      - name: Collect release files
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          HARMONY_VERSION: ${{ steps.version.outputs.harmony_version }}
+        run: |
+          set -euo pipefail
+          apk_dir="$RUNNER_TEMP/animeko/app/android/build/outputs/apk/default/release"
+          ls -la "$apk_dir"
+          mkdir -p release-files
+          cp "$apk_dir/android-default-arm64-v8a-release.apk" "release-files/ani-${HARMONY_VERSION}-arm64-v8a.apk"
+          cd release-files
+          for f in *.apk; do sha1sum "$f" | cut -d' ' -f1 > "$f.sha1"; done
+          ls -la
+
+      - name: Upload APK as workflow artifact
+        if: steps.existing.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: animeko-harmony-${{ steps.version.outputs.release_tag }}
+          path: release-files/*
+
+      - name: Write release notes
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.version.outputs.upstream_tag }}
+          HARMONY_VERSION: ${{ steps.version.outputs.harmony_version }}
+        run: |
+          set -euo pipefail
+          {
+            echo "基于 [Animeko $UPSTREAM_TAG](https://github.com/$UPSTREAM_REPO/releases/tag/$UPSTREAM_TAG) 的非官方 HarmonyOS / 卓易通 兼容构建。"
+            echo
+            echo "## 本构建包含的补丁"
+            echo
+            while IFS= read -r patch || [[ -n "$patch" ]]; do
+              [[ -z "$patch" || "$patch" == \#* ]] && continue
+              # format-patch 会把长 Subject 折行, 续行以空格开头.
+              subject="$(awk '/^Subject: /{ sub(/^Subject: /,""); sub(/^\[PATCH[^]]*\] /,""); s=$0; while ((getline line) > 0 && line ~ /^ /) { s = s line } print s; exit }' "patches/$patch")"
+              echo "- \`$patch\`: $subject"
+            done < patches/series
+            echo
+            echo "## 安装说明"
+            echo
+            echo "- 下载 \`ani-${HARMONY_VERSION}-arm64-v8a.apk\`（华为设备均为 arm64）。"
+            echo "- 包名与官方版相同（\`me.him188.ani\`）但签名不同：首次安装前需先卸载官方版；之后的 harmony 版本可直接覆盖安装。"
+            echo "- 应用内更新会检查本仓库的 Release，而不是官方更新服务器。"
+            echo
+            echo "## 校验"
+            echo
+            echo '```'
+            for f in release-files/*.apk; do
+              echo "$(cat "$f.sha1")  $(basename "$f")"
+            done
+            echo '```'
+          } > "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md"
+
+      - name: Create GitHub release
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+          HARMONY_VERSION: ${{ steps.version.outputs.harmony_version }}
+        run: |
+          set -euo pipefail
+          # 打包后的源码树不会推回本仓库; tag 指向运行本次 workflow 的提交, 补丁内容以该提交的 patches/ 为准.
+          gh release create "$RELEASE_TAG" \
+            release-files/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Animeko Harmony $HARMONY_VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
