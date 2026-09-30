@@ -1,0 +1,3 @@
+# Applied in order by scripts/prepare-source.sh
+0001-android-harden-foreground-service-notification.patch
+0002-updater-use-harmony-fork-releases.patch

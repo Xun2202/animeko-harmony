@@ -1,7 +1,7 @@
-From 25a9f84de7c172283fe061647ff7decb6f1e9e09 Mon Sep 17 00:00:00 2001
+From a4f63a687bca6b3edcafe7e4f39739003aa79c0c Mon Sep 17 00:00:00 2001
 From: Cursor Agent <agent@cursor.local>
-Date: Wed, 30 Sep 2026 16:58:43 +0000
-Subject: [PATCH] fix(android): always startForeground for torrent service,
+Date: Wed, 30 Sep 2026 17:17:59 +0000
+Subject: [PATCH 1/2] fix(android): always startForeground for torrent service,
  stop relying on activeNotifications
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -19,8 +19,7 @@ screen), and a missing entry made every notification update a silent no-op, so t
 - Keep the last display strategy so restarts do not reset the notification to idle.
 - Catch IllegalStateException/SecurityException with stack traces; warn when
   notifications or the channel are blocked so bug reports show it.
-- AniTorrentService stops itself when the foreground start is refused, matching
-  PikPakCacheService.
+- AniTorrentService stops itself when the foreground start is refused.
 - AniTorrentServiceStarter times out (15s) waiting for the startup broadcast instead
   of hanging forever.
 ---
@@ -128,7 +127,7 @@ index 8b27447..d99300e 100644
  }
 \ No newline at end of file
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
-index e6b8386..c6111a0 100644
+index 46c947f..3bacfd3 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
 @@ -9,7 +9,6 @@
@@ -139,7 +138,7 @@ index e6b8386..c6111a0 100644
  import android.app.Notification
  import android.app.NotificationChannel
  import android.app.NotificationManager
-@@ -48,6 +47,24 @@ class ServiceNotification(
+@@ -36,6 +35,24 @@ class ServiceNotification(
      var notificationAppearance = defaultNotificationAppearance
          private set
      private var notificationOpenActivityIntent: Intent? = null
@@ -163,8 +162,8 @@ index e6b8386..c6111a0 100644
 +    private var lastDisplayStrategy: NotificationDisplayStrategy = NotificationDisplayStrategy.Idle(0.bytes, 0.bytes)
      private val stopServiceIntent by lazy {
          PendingIntent.getService(
-             context, notificationId,
-@@ -114,28 +131,37 @@ class ServiceNotification(
+             context, 0,
+@@ -95,28 +112,37 @@ class ServiceNotification(
      }
  
      /**
@@ -180,7 +179,7 @@ index e6b8386..c6111a0 100644
 +     * case, see [AniTorrentService.onStartCommand].
       */
      fun createNotification(service: Service): Boolean {
--        val currentNotification = notificationService.activeNotifications.find { it.id == notificationId }
+-        val currentNotification = notificationService.activeNotifications.find { it.id == NOTIFICATION_ID }
 -        if (currentNotification != null) return true
 +        warnIfNotificationsAreHidden()
  
@@ -190,7 +189,7 @@ index e6b8386..c6111a0 100644
 -        )
 -        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
 -            try {
--                service.startForeground(notificationId, notification)
+-                service.startForeground(NOTIFICATION_ID, notification)
 -                return true
 -            } catch (e: ForegroundServiceStartNotAllowedException) {
 -                // Android 15 limitation: https://developer.android.com/about/versions/15/behavior-changes-15#datasync-timeout
@@ -200,7 +199,7 @@ index e6b8386..c6111a0 100644
 -        } else {
 +        val notification = buildNotification(notificationAppearance, lastDisplayStrategy)
 +        return try {
-             service.startForeground(notificationId, notification)
+             service.startForeground(NOTIFICATION_ID, notification)
 -            return true
 +            isForeground = true
 +            true
@@ -220,16 +219,16 @@ index e6b8386..c6111a0 100644
          }
      }
  
-@@ -143,12 +169,30 @@ class ServiceNotification(
+@@ -124,12 +150,30 @@ class ServiceNotification(
       * update notification to current state.
       */
      fun updateNotification(displayStrategy: NotificationDisplayStrategy) {
--        notificationService.activeNotifications.find { it.id == notificationId } ?: return
+-        notificationService.activeNotifications.find { it.id == NOTIFICATION_ID } ?: return
 +        lastDisplayStrategy = displayStrategy
 +        if (!isForeground) return
  
          val notification = buildNotification(notificationAppearance, displayStrategy)
-         notificationService.notify(notificationId, notification)
+         notificationService.notify(NOTIFICATION_ID, notification)
      }
  
 +    /**
@@ -245,7 +244,7 @@ index e6b8386..c6111a0 100644
 +        }
 +        val channelImportance = runCatching { notificationChannel.importance }.getOrNull() ?: return
 +        if (channelImportance == NotificationManager.IMPORTANCE_NONE) {
-+            logger.warn { "Notification channel $channelId is blocked by the user; the foreground service notification will not be visible." }
++            logger.warn { "Notification channel $NOTIFICATION_CHANNEL_ID is blocked by the user; the foreground service notification will not be visible." }
 +        }
 +    }
 +

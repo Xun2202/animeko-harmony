@@ -1,0 +1,188 @@
+From a999dae8b8cb715cde5318f70974c24c03798083 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <agent@cursor.local>
+Date: Wed, 30 Sep 2026 17:18:00 +0000
+Subject: [PATCH 2/2] feat(update): check the Harmony fork's GitHub releases
+ for -harmony builds
+
+Fork builds are versioned <upstream>-harmony.<n>. The official update server treats
+that as a pre-release of <upstream> and offers the official APK, which cannot be
+installed over an APK signed with a different key. When the running version matches
+the fork pattern, UpdateChecker now lists the fork's GitHub releases, compares the
+(major, minor, patch, harmony) tuple, and offers the matching -arm64-v8a.apk (universal
+as fallback). The release-notes link follows the same rule.
+---
+ .../kotlin/ui/update/HarmonyForkUpdates.kt    | 126 ++++++++++++++++++
+ .../kotlin/ui/update/UpdateChecker.kt         |   7 +
+ .../kotlin/ui/update/UpdateNotifierHost.kt    |   5 +-
+ 3 files changed, 136 insertions(+), 2 deletions(-)
+ create mode 100644 app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
+
+diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
+new file mode 100644
+index 0000000..bdb551a
+--- /dev/null
++++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
+@@ -0,0 +1,126 @@
++/*
++ * Copyright (C) 2024-2026 OpenAni and contributors.
++ *
++ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
++ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
++ *
++ * https://github.com/open-ani/ani/blob/main/LICENSE
++ */
++
++package me.him188.ani.app.ui.update
++
++import io.ktor.client.HttpClient
++import io.ktor.client.request.get
++import io.ktor.client.request.header
++import io.ktor.client.request.parameter
++import io.ktor.client.statement.bodyAsText
++import kotlinx.serialization.SerialName
++import kotlinx.serialization.Serializable
++import kotlinx.serialization.builtins.ListSerializer
++import kotlinx.serialization.json.Json
++import me.him188.ani.utils.platform.Arch
++
++/**
++ * Update source for the unofficial HarmonyOS (卓易通) builds.
++ *
++ * Fork builds carry a version name like `6.2.0-harmony.1`. The official update server treats that as a
++ * pre-release of `6.2.0` and offers the official `6.2.0` APK, which cannot be installed over a build with a
++ * different signing key. Such builds therefore check the fork's own GitHub releases instead.
++ */
++internal const val HARMONY_FORK_REPO = "Xun2202/animeko-harmony"
++
++internal data class HarmonyForkVersion(
++    val major: Int,
++    val minor: Int,
++    val patch: Int,
++    val harmony: Int,
++) : Comparable<HarmonyForkVersion> {
++    val name: String get() = "$major.$minor.$patch-harmony.$harmony"
++
++    override fun compareTo(other: HarmonyForkVersion): Int = compareValuesBy(
++        this, other,
++        { it.major }, { it.minor }, { it.patch }, { it.harmony },
++    )
++
++    companion object {
++        private val REGEX = Regex("""^v?(\d+)\.(\d+)\.(\d+)-harmony\.(\d+)$""")
++
++        fun parse(version: String): HarmonyForkVersion? {
++            val match = REGEX.matchEntire(version.trim()) ?: return null
++            val (major, minor, patch, harmony) = match.destructured
++            return HarmonyForkVersion(major.toInt(), minor.toInt(), patch.toInt(), harmony.toInt())
++        }
++    }
++}
++
++internal fun harmonyForkReleasePageUrl(version: HarmonyForkVersion): String =
++    "https://github.com/$HARMONY_FORK_REPO/releases/tag/v${version.name}"
++
++@Serializable
++internal class GitHubReleaseAsset(
++    val name: String,
++    @SerialName("browser_download_url") val browserDownloadUrl: String,
++)
++
++@Serializable
++internal class GitHubRelease(
++    @SerialName("tag_name") val tagName: String,
++    val body: String? = null,
++    @SerialName("published_at") val publishedAt: String? = null,
++    val draft: Boolean = false,
++    val prerelease: Boolean = false,
++    val assets: List<GitHubReleaseAsset> = emptyList(),
++)
++
++private val githubJson = Json { ignoreUnknownKeys = true }
++
++/**
++ * Returns the newest fork release newer than [current], or `null` when [current] is already the latest.
++ */
++internal suspend fun HttpClient.getHarmonyForkLatestVersion(
++    current: HarmonyForkVersion,
++    arch: Arch,
++): NewVersion? {
++    val releases = get("https://api.github.com/repos/$HARMONY_FORK_REPO/releases") {
++        parameter("per_page", 30)
++        header("Accept", "application/vnd.github+json")
++    }.bodyAsText().let {
++        githubJson.decodeFromString(ListSerializer(GitHubRelease.serializer()), it)
++    }
++
++    val newer = releases.asSequence()
++        .filter { !it.draft }
++        .mapNotNull { release -> HarmonyForkVersion.parse(release.tagName)?.let { it to release } }
++        .filter { (version, _) -> version > current }
++        .sortedBy { (version, _) -> version }
++        .toList()
++
++    val (latestVersion, latest) = newer.lastOrNull() ?: return null
++    return NewVersion(
++        name = latestVersion.name,
++        changelogs = newer.asReversed().take(10).map { (version, release) ->
++            Changelog(version.name, formatGitHubDate(release.publishedAt), release.body.orEmpty())
++        },
++        downloadUrlAlternatives = selectApkAssets(latest.assets, arch),
++        publishedAt = formatGitHubDate(latest.publishedAt),
++    )
++}
++
++/**
++ * Picks the APK for this device first and the universal APK as a fallback. Release assets are named
++ * `ani-<version>-<abi>.apk`, matching the official release layout.
++ */
++internal fun selectApkAssets(assets: List<GitHubReleaseAsset>, arch: Arch): List<String> {
++    val abi = when (arch) {
++        Arch.ARMV8A, Arch.AARCH64 -> "arm64-v8a"
++        Arch.ARMV7A -> "armeabi-v7a"
++        Arch.X86_64 -> "x86_64"
++    }
++    val apks = assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
++    val exact = apks.filter { it.name.endsWith("-$abi.apk", ignoreCase = true) }
++    val universal = apks.filter { it.name.endsWith("-universal.apk", ignoreCase = true) }
++    return (exact + universal).map { it.browserDownloadUrl }.distinct()
++}
++
++// GitHub returns ISO-8601 timestamps; the date part is all the UI shows.
++private fun formatGitHubDate(publishedAt: String?): String = publishedAt.orEmpty().take(10)
+diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt
+index 6c07a74..14566cf 100644
+--- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt
++++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt
+@@ -39,6 +39,13 @@ class UpdateChecker {
+         HttpClient(getPlatformKtorEngine()) {
+             expectSuccess = true
+         }.use { client ->
++            // HarmonyOS fork builds are not known to the official update server; see HarmonyForkUpdates.kt.
++            HarmonyForkVersion.parse(currentVersion)?.let { forkVersion ->
++                return client.getHarmonyForkLatestVersion(forkVersion, currentPlatform().arch).also {
++                    logger.info { "Got latest version from $HARMONY_FORK_REPO: ${it?.name}" }
++                }
++            }
++
+             withExceptionCollector {
+                 return kotlin.runCatching {
+                     client.getVersionFromAniServer("https://danmaku-global.myani.org/", currentVersion, releaseClass)
+diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateNotifierHost.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateNotifierHost.kt
+index 763e069..d1c2179 100644
+--- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateNotifierHost.kt
++++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateNotifierHost.kt
+@@ -151,8 +151,9 @@ fun BoxScope.UpdateNotifier(
+         } else {
+             // 提示有新版本
+ 
+-            val onDetailsClick =
+-                { uriHandler.openUri("https://github.com/open-ani/animeko/releases/tag/v${newVersion.name}") }
++            val releasePageUrl = HarmonyForkVersion.parse(newVersion.name)?.let { harmonyForkReleasePageUrl(it) }
++                ?: "https://github.com/open-ani/animeko/releases/tag/v${newVersion.name}"
++            val onDetailsClick = { uriHandler.openUri(releasePageUrl) }
+ 
+             when (layoutKind) {
+                 UpdateNotifierLayoutKind.POPUP -> {
+-- 
+2.43.0
+
