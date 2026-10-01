@@ -19,7 +19,7 @@
 | --- | --- |
 | 仓库形态 | 不是源码 fork。只有 `patches/`、`scripts/`、workflow 和文档；源码在 Actions 运行时从官方 tag 拉取 |
 | 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布：`v6.2.0-harmony.1`（2026-10-01） |
-| 包名 | `me.him188.ani`（与官方相同），签名为自建密钥 → 与官方版不能互相覆盖，需卸载后安装 |
+| 包名 | `me.him188.ani.harmony`（补丁 0003），应用名「Animeko Harmony」→ 与官方版 `me.him188.ani` 共存。`harmony.1` 曾用官方包名，被卓易通以签名不匹配拒装 |
 | versionCode | 沿用上游固定值 `android.version.code`（上游刻意不变，方便回退），harmony 版本之间可任意覆盖 |
 | 构建 | `.github/workflows/harmony_release.yml`，ubuntu-24.04，Temurin JDK 21，`assembleDefaultRelease`，只编 `arm64-v8a` |
 | 触发 | 每天 UTC 03:23 定时 + 手动 `workflow_dispatch` |
@@ -33,6 +33,7 @@ patches/
   series                                   # 套用顺序, 一行一个文件名, # 开头为注释
   0001-android-harden-foreground-service-notification.patch
   0002-updater-use-harmony-fork-releases.patch
+  0003-android-use-harmony-application-id.patch
 scripts/prepare-source.sh                  # 套补丁 + 改更新器仓库名 + 改版本号, workflow 和本地都用它
 .github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release
 .github/workflows/check_patches.yml        # 补丁能否套到上游最新稳定版 / main
@@ -57,6 +58,17 @@ docs/ANALYSIS.md                           # 问题分析与真机取证方法
 - 仓库名硬编码为 `Xun2202/animeko-harmony`；`prepare-source.sh` 在 `FORK_REPO`（workflow 传 `${{ github.repository }}`）不同时用 `sed` 替换，所以 fork 本仓库也能用。
 
 为什么必须有这个补丁：官方更新服务器对 `clientVersion=6.2.0-harmony.1` 会返回 `6.2.0`（把它当预发布版），App 会不停提示更新到官方 6.2.0，而官方 APK 签名不同装不上。
+
+### 0003 独立包名
+
+- `app/android/build.gradle.kts`：`applicationId = "me.him188.ani.harmony"`。manifest 里两个 provider 的 authority 用的是 `${applicationId}`，自动跟随。
+- `utils/build-config/build.gradle.kts`：release 的 `APP_APPLICATION_ID` 改为 `me.him188.ani.harmony`。代码里 `AndroidBuildConfig.APP_APPLICATION_ID + ".fileprovider"`（日志分享、APK 安装）必须与 manifest 一致，否则 `FileProvider.getUriForFile` 抛异常。
+- `app/shared/src/androidMain/res/values*/strings.xml`：`app_name` → `Animeko Harmony`，`app_package` → 新包名（该字符串目前无人引用，顺手改）。
+- `namespace`（`me.him188.ani.android` / `me.him188.ani`）**不改**，否则所有 `R`/`BuildConfig` 的 import 都要动。
+
+为什么必须有这个补丁：卓易通安装 APK 时按包名查应用目录，命中官方 `me.him188.ani` 但签名不匹配就拒绝，系统随后交给出境易，用户看到「出境易暂不支持安装该应用」。`v6.2.0-harmony.1` 就是这样装不上的。改成独立包名后卓易通把它当成未知应用正常安装，副作用是 `ani://` deep link（扫码登录、分享）在两个版本同时安装时会弹选择框。
+
+rebase 时留意：上游如果把 `applicationId` 挪到 `gradle.properties` 或改了 `APP_APPLICATION_ID` 的定义方式，按新位置改即可，目标值不变。
 
 ## 5. 日常操作
 
@@ -112,11 +124,14 @@ Animeko 的 Gradle 通过环境变量读取签名参数（`build-logic/src/main/
 | `assembleDefaultRelease` 成功但找不到 APK | 路径是 `app/android/build/outputs/apk/default/release/android-default-<abi>-release.apk`；`splits.abi.isUniversalApk=true` 还会多出 `-universal-`。改了 ABI 列表要同步改 workflow 的收集步骤 |
 | Release 建好了但 App 检查不到更新 | 检查 tag 是否严格是 `vX.Y.Z-harmony.N`、Release 不是 draft、资产名以 `-arm64-v8a.apk` 结尾；GitHub API 匿名限流 60 次/小时，短时间内反复点也可能 403 |
 | App 提示更新到官方版本 | 说明运行的不是 harmony 版本号（补丁 0002 没套上或 `version.name` 没改），看 prepare-source.sh 的输出 |
+| 鸿蒙提示「出境易暂不支持安装该应用」 | 卓易通拒装了：包名在其目录里但签名不匹配。确认 APK 的包名是 `me.him188.ani.harmony`（`aapt2 dump badging x.apk \| head -1`，补丁 0003 是否套上）。若上游重构后包名又变回 `me.him188.ani`，就会复现 |
+| 分享日志 / 应用内更新安装时崩溃 `Couldn't find meta-data for provider with authority` | `APP_APPLICATION_ID` 与 manifest 的 `${applicationId}` 不一致，检查补丁 0003 两处是否都套上 |
 
 ## 8. 已知限制与后续方向
 
 - 只出 `arm64-v8a`；需要 x86_64（卓易通 PC 端？）可把 `ani.android.abis` 改为 `all` 并在收集步骤加文件。
 - 只跟踪稳定版。要跟 beta 需要放宽 workflow 和 `HarmonyForkVersion` 的正则。
 - 没有 Firebase（`google-services.json` 是官方私有），Analytics/Crashlytics 不可用，属预期。
+- 包名与官方不同，`ani://` deep link 在两版共存时会弹应用选择框；官方版的数据不能迁移到 harmony 版（Animeko 本身没有导入导出）。
 - 卓易通/鸿蒙对容器后台的冻结策略 App 无法绕过，用户仍可能需要在系统设置把卓易通/Animeko 的电池策略改为手动管理。
 - 可考虑的后续补丁：在下载页提示"通知已被系统关闭"并跳转系统设置（`PermissionManager.checkNotificationPermission()` 已存在但无 UI 调用），见 `docs/ANALYSIS.md` 第五节。

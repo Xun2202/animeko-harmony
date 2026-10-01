@@ -12,8 +12,13 @@
 ## 下载与安装
 
 - 到 [Releases](../../releases) 下载最新的 `ani-<版本>-arm64-v8a.apk`（华为设备均为 arm64）。
-- 包名与官方版相同（`me.him188.ani`），但签名不同：**首次安装前需先卸载官方版**（数据会丢失，请先在官方版里备份/导出）。之后的 harmony 版本可以直接覆盖安装。
+- 包名为 `me.him188.ani.harmony`，桌面名称「Animeko Harmony」，与官方版（`me.him188.ani`）是两个独立应用，**可以共存、互不覆盖**，账号和下载数据需要分别设置。
 - 应用内「检查更新」已改为检查本仓库的 Release，不会再提示安装官方 APK。
+- 若同时装了官方版，点击 `ani://` 链接（扫码登录、分享链接等）时系统会弹出选择框，选 Animeko Harmony 即可。
+
+> 为什么不用官方包名？卓易通安装 APK 时会按包名查自己的应用目录，包名命中但签名与官方不一致的 APK 会被拒绝，
+> 系统随后交给「出境易」处理并提示「暂不支持安装该应用」。`v6.2.0-harmony.1` 就是因此装不上的，从 `harmony.2` 起改为独立包名。
+> 这与 APK 是否为 universal 包无关：华为设备均为 arm64，`arm64-v8a` 包与 universal 包内容一致。
 
 ## 包含的补丁
 
@@ -21,13 +26,14 @@
 | --- | --- |
 | [`0001-android-harden-foreground-service-notification.patch`](./patches/0001-android-harden-foreground-service-notification.patch) | BT 下载前台服务每次都真正调用 `startForeground()`，不再依赖 `activeNotifications` 判断；修复卓易通下开始下载后通知不更新、切后台/锁屏后下载停止的问题。详细分析见 [`docs/ANALYSIS.md`](./docs/ANALYSIS.md)。 |
 | [`0002-updater-use-harmony-fork-releases.patch`](./patches/0002-updater-use-harmony-fork-releases.patch) | 版本号为 `x.y.z-harmony.N` 时，应用内更新改查本仓库 GitHub Releases，并按 `(x, y, z, N)` 比较版本；否则官方更新服务器会把它当成 `x.y.z` 的预发布版而推送官方 APK（签名不同无法安装）。 |
+| [`0003-android-use-harmony-application-id.patch`](./patches/0003-android-use-harmony-application-id.patch) | `applicationId` 改为 `me.him188.ani.harmony`、应用名改为「Animeko Harmony」，并同步 `AndroidBuildConfig.APP_APPLICATION_ID`（FileProvider authority 由它拼出）。绕过卓易通对已知包名的签名校验，并允许与官方版共存。 |
 
 补丁按 [`patches/series`](./patches/series) 的顺序套用。
 
 ## 版本号规则
 
 - `version.name` = `<官方版本>-harmony.<N>`，例如 `6.2.0-harmony.1`；`N` 是同一官方版本的第几次打包，改了补丁需要重发时递增。
-- `versionCode` 沿用上游的固定值（上游刻意不随版本变化，以便用户回退），因此任意 harmony 版本之间都可以互相覆盖安装。
+- `versionCode` 沿用上游的固定值（上游刻意不随版本变化，以便用户回退），因此任意 harmony 版本之间都可以互相覆盖安装（`harmony.1` 因包名不同除外，它本来也装不上）。
 
 ## 构建机制
 

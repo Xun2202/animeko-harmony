@@ -226,7 +226,8 @@ jobs:
             echo "## 安装说明"
             echo
             echo "- 下载 \`ani-${HARMONY_VERSION}-arm64-v8a.apk\`（华为设备均为 arm64）。"
-            echo "- 包名与官方版相同（\`me.him188.ani\`）但签名不同：首次安装前需先卸载官方版；之后的 harmony 版本可直接覆盖安装。"
+            echo "- 包名为 \`me.him188.ani.harmony\`（应用名「Animeko Harmony」），与官方版是两个独立应用，可以共存；harmony 版本之间可直接覆盖安装。"
+            echo "- 若此前装过 \`v6.2.0-harmony.1\`（旧包名，卓易通会拒装），直接安装本版本即可，无需处理。"
             echo "- 应用内更新会检查本仓库的 Release，而不是官方更新服务器。"
             echo
             echo "## 校验"
