@@ -19,7 +19,7 @@
 | --- | --- |
 | 仓库形态 | 不是源码 fork。只有 `patches/`、`scripts/`、workflow 和文档；源码在 Actions 运行时从官方 tag 拉取 |
 | 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布：`v6.2.0-harmony.1`（官方包名，装不上，已标为 prerelease 并加警告）、`v6.2.0-harmony.2`（2026-10-01，当前可用） |
-| 包名 | `me.him188.ani.harmony`（补丁 0003），应用名「Animeko Harmony」→ 与官方版 `me.him188.ani` 共存。`harmony.1` 曾用官方包名，被卓易通以签名不匹配拒装 |
+| 包名 | `me.him188.ani.harmony`（补丁 0003），桌面名称仍为「Animeko」→ 与官方版 `me.him188.ani` 共存。`harmony.1` 曾用官方包名，被卓易通以签名不匹配拒装 |
 | versionCode | 沿用上游固定值 `android.version.code`（上游刻意不变，方便回退），harmony 版本之间可任意覆盖 |
 | 构建 | `.github/workflows/harmony_release.yml`，ubuntu-24.04，Temurin JDK 21，`assembleDefaultRelease`，只编 `arm64-v8a` |
 | 触发 | 每天 UTC 03:23 定时 + 手动 `workflow_dispatch` |
@@ -63,7 +63,7 @@ docs/ANALYSIS.md                           # 问题分析与真机取证方法
 
 - `app/android/build.gradle.kts`：`applicationId = "me.him188.ani.harmony"`。manifest 里两个 provider 的 authority 用的是 `${applicationId}`，自动跟随。
 - `utils/build-config/build.gradle.kts`：release 的 `APP_APPLICATION_ID` 改为 `me.him188.ani.harmony`。代码里 `AndroidBuildConfig.APP_APPLICATION_ID + ".fileprovider"`（日志分享、APK 安装）必须与 manifest 一致，否则 `FileProvider.getUriForFile` 抛异常。
-- `app/shared/src/androidMain/res/values*/strings.xml`：`app_name` → `Animeko Harmony`，`app_package` → 新包名（该字符串目前无人引用，顺手改）。
+- `app/shared/src/androidMain/res/values/strings.xml`：`app_package` → 新包名（该字符串目前无人引用，顺手改）。`app_name` 保持「Animeko」不改（曾在 harmony.2 改成「Animeko Harmony」，嫌长改回）。
 - `namespace`（`me.him188.ani.android` / `me.him188.ani`）**不改**，否则所有 `R`/`BuildConfig` 的 import 都要动。
 
 为什么必须有这个补丁：卓易通安装 APK 时按包名查应用目录，命中官方 `me.him188.ani` 但签名不匹配就拒绝，系统随后交给出境易，用户看到「出境易暂不支持安装该应用」。`v6.2.0-harmony.1` 就是这样装不上的。改成独立包名后卓易通把它当成未知应用正常安装，副作用是 `ani://` deep link（扫码登录、分享）在两个版本同时安装时会弹选择框。
