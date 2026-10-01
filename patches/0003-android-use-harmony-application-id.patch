@@ -1,0 +1,154 @@
+From 5ec9e93d23d78dfa886d3d3a9934ccf432d04269 Mon Sep 17 00:00:00 2001
+From: Xun2202 <xun2202@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 05:34:45 +0000
+Subject: [PATCH] android: use a dedicated applicationId for the Harmony build
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+HarmonyOS 卓易通 refuses to install APKs whose package name is in its
+catalogue but whose signature does not match the official one, and the
+system then falls back to 出境易 with "暂不支持安装该应用".
+
+Switch the Harmony build to the package name `me.him188.ani.harmony`
+so it is treated as an independent app. This also lets it coexist with
+the official Animeko install. The FileProvider authority derived from
+AndroidBuildConfig.APP_APPLICATION_ID and the launcher label are
+updated to match.
+---
+ android_signing_key                              | Bin 0 -> 2554 bytes
+ app/android/build.gradle.kts                     |   2 +-
+ .../androidMain/res/values-zh-rCN/strings.xml    |   2 +-
+ .../androidMain/res/values-zh-rHK/strings.xml    |   2 +-
+ .../src/androidMain/res/values/strings.xml       |   4 ++--
+ utils/build-config/build.gradle.kts              |   2 +-
+ 6 files changed, 6 insertions(+), 6 deletions(-)
+ create mode 100644 android_signing_key
+
+diff --git a/android_signing_key b/android_signing_key
+new file mode 100644
+index 0000000000000000000000000000000000000000..595ab7c4d88868105fed64309572af3963b87433
+GIT binary patch
+literal 2554
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/app/android/build.gradle.kts b/app/android/build.gradle.kts
+index 5a76277..f5ccded 100644
+--- a/app/android/build.gradle.kts
++++ b/app/android/build.gradle.kts
+@@ -36,7 +36,7 @@ android {
+     namespace = "me.him188.ani.android"
+     compileSdk = getIntProperty("android.compile.sdk")
+     defaultConfig {
+-        applicationId = "me.him188.ani"
++        applicationId = "me.him188.ani.harmony"
+         minSdk = getIntProperty("android.min.sdk")
+         targetSdk = getIntProperty("android.compile.sdk")
+         versionCode = getIntProperty("android.version.code")
+diff --git a/app/shared/src/androidMain/res/values-zh-rCN/strings.xml b/app/shared/src/androidMain/res/values-zh-rCN/strings.xml
+index e300984..6aed21b 100644
+--- a/app/shared/src/androidMain/res/values-zh-rCN/strings.xml
++++ b/app/shared/src/androidMain/res/values-zh-rCN/strings.xml
+@@ -8,7 +8,7 @@
+   -->
+ 
+ <resources>
+-    <string name="app_name">Animeko</string>
++    <string name="app_name">Animeko Harmony</string>
+     <string name="service_torrent_engine_description">Animeko BT 引擎前台服务</string>
+     <string name="app_service_title_text_idle">没有下载任务</string>
+     <string name="app_service_title_text_working">正在下载 %1$d 个资源</string>
+diff --git a/app/shared/src/androidMain/res/values-zh-rHK/strings.xml b/app/shared/src/androidMain/res/values-zh-rHK/strings.xml
+index 744b593..563c36a 100644
+--- a/app/shared/src/androidMain/res/values-zh-rHK/strings.xml
++++ b/app/shared/src/androidMain/res/values-zh-rHK/strings.xml
+@@ -8,7 +8,7 @@
+   -->
+ 
+ <resources>
+-    <string name="app_name">Animeko</string>
++    <string name="app_name">Animeko Harmony</string>
+     <string name="service_torrent_engine_description">Animeko BT 引擎前台服务</string>
+     <string name="app_service_title_text_idle">没有下载任务</string>
+     <string name="app_service_title_text_working">正在下载 %1$d 个资源</string>
+diff --git a/app/shared/src/androidMain/res/values/strings.xml b/app/shared/src/androidMain/res/values/strings.xml
+index bbf2153..4c46247 100644
+--- a/app/shared/src/androidMain/res/values/strings.xml
++++ b/app/shared/src/androidMain/res/values/strings.xml
+@@ -8,8 +8,8 @@
+   -->
+ 
+ <resources>
+-    <string name="app_name">Animeko</string>
+-    <string name="app_package" translatable="false">me.him188.ani</string>
++    <string name="app_name">Animeko Harmony</string>
++    <string name="app_package" translatable="false">me.him188.ani.harmony</string>
+     <string name="service_torrent_engine_description">Animeko BT engine foreground service</string>
+     <string name="app_service_title_text_idle">No download tasks</string>
+     <string name="app_service_title_text_working">Downloading %1$d resource(s)</string>
+diff --git a/utils/build-config/build.gradle.kts b/utils/build-config/build.gradle.kts
+index 7d74dcc..4ac26fd 100644
+--- a/utils/build-config/build.gradle.kts
++++ b/utils/build-config/build.gradle.kts
+@@ -22,7 +22,7 @@ android {
+ 
+     buildTypes {
+         release {
+-            buildConfigField("String", "APP_APPLICATION_ID", "\"${idGroup}\"")
++            buildConfigField("String", "APP_APPLICATION_ID", "\"${idGroup}.harmony\"")
+         }
+ 
+         debug {
+-- 
+2.43.0
+
