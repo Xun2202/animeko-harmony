@@ -49,7 +49,7 @@
 
 ## Secrets
 
-已配置完成，首个版本 [`v6.2.0-harmony.1`](../../releases/tag/v6.2.0-harmony.1) 由流水线自动产出。签名密钥备份在私有仓库 `Xun2202/animeko-harmony-keystore`（含各 Secret 的值）。仓库 Settings → Secrets and variables → Actions 中的条目：
+已配置完成，[`v6.2.0-harmony.2`](../../releases/tag/v6.2.0-harmony.2) 等版本均由流水线自动产出。签名密钥备份在私有仓库 `Xun2202/animeko-harmony-keystore`（含各 Secret 的值）。仓库 Settings → Secrets and variables → Actions 中的条目：
 
    | Secret | 内容 |
    | --- | --- |
