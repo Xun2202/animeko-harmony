@@ -18,7 +18,7 @@
 | 项目 | 内容 |
 | --- | --- |
 | 仓库形态 | 不是源码 fork。只有 `patches/`、`scripts/`、workflow 和文档；源码在 Actions 运行时从官方 tag 拉取 |
-| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1` |
+| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布：`v6.2.0-harmony.1`（2026-10-01） |
 | 包名 | `me.him188.ani`（与官方相同），签名为自建密钥 → 与官方版不能互相覆盖，需卸载后安装 |
 | versionCode | 沿用上游固定值 `android.version.code`（上游刻意不变，方便回退），harmony 版本之间可任意覆盖 |
 | 构建 | `.github/workflows/harmony_release.yml`，ubuntu-24.04，Temurin JDK 21，`assembleDefaultRelease`，只编 `arm64-v8a` |
@@ -67,7 +67,7 @@ Actions → **Harmony Release** → Run workflow：
 - `upstream_tag`：官方 tag，如 `v6.3.0`；留空取最新稳定版。只接受 `vX.Y.Z`，不支持 alpha/beta。
 - `patch_number`：同一官方版本第几次打包，从 `1` 开始。改了补丁想重编就填 `2`、`3`……
 
-同名 Release 已存在会直接跳过；要重编必须换补丁号或先删旧 Release。整个流程约 30–60 分钟（Animeko 编译很重，上游自己的 CI 也是 8g 堆 + 10g swap）。
+同名 Release 已存在会直接跳过；要重编必须换补丁号或先删旧 Release。整个流程约 15 分钟（首个版本 `v6.2.0-harmony.1` 实测 14 分钟；Animeko 编译很重，参数照搬上游 CI 的 8g 堆 + 10g swap）。
 
 ### 5.2 定时任务
 
@@ -83,7 +83,7 @@ Actions → **Harmony Release** → Run workflow：
 | `KEY_PASSWORD` | key 密码 | 是 |
 | `DANDANPLAY_APP_ID` / `DANDANPLAY_APP_SECRET` | 弹弹play 开放平台密钥，不填则该弹幕源不可用 | 否 |
 
-与 `mihon-harmony` 同名，可以直接复用同一个 keystore。**签名密钥一旦更换，用户就必须卸载重装**，务必备份（参考 `mihon-repo-keystore` 私有仓库的做法）。
+与 `mihon-harmony` 同名但**不是**同一个密钥：本仓库使用独立的 keystore（RSA 4096，alias `xun2202-animeko-harmony`，有效期至 2056-09-30，证书 SHA-256 `50907c1de76a92991797ed8c5c1feb5df56e180634738b538bddc81735dda10b`）。keystore 文件和全部 Secret 的值备份在私有仓库 `Xun2202/animeko-harmony-keystore`，格式与 `mihon-repo-keystore` 相同。**签名密钥一旦更换，用户就必须卸载重装**，不要丢。
 
 Animeko 的 Gradle 通过环境变量读取签名参数（`build-logic/src/main/kotlin/properties.kt` 的 `aniProperty()` 顺序：local.properties → 系统属性 → 环境变量 → Gradle property）：
 `signing_release_storeFileFromRoot`（相对仓库根的 keystore 路径）、`signing_release_storePassword`、`signing_release_keyAlias`、`signing_release_keyPassword`。没有这些变量时输出未签名 APK，不报错——所以 workflow 前面有一步显式校验 Secrets 非空。

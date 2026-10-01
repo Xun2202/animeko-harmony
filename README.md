@@ -41,9 +41,9 @@
 
 [`.github/workflows/check_patches.yml`](./.github/workflows/check_patches.yml) 在补丁改动时和每周一，把补丁分别试套到官方最新稳定版和 `main`，上游一变就能提前知道要 rebase。
 
-## 首次启用需要做的事
+## Secrets
 
-1. 在仓库 Settings → Secrets and variables → Actions 添加（与 `mihon-harmony` 用同一套名字，可复用同一个密钥）：
+已配置完成，首个版本 [`v6.2.0-harmony.1`](../../releases/tag/v6.2.0-harmony.1) 由流水线自动产出。签名密钥备份在私有仓库 `Xun2202/animeko-harmony-keystore`（含各 Secret 的值）。仓库 Settings → Secrets and variables → Actions 中的条目：
 
    | Secret | 内容 |
    | --- | --- |
@@ -53,7 +53,7 @@
    | `KEY_PASSWORD` | key 密码 |
    | `DANDANPLAY_APP_ID` / `DANDANPLAY_APP_SECRET` | 可选。弹弹play 开放平台的 App ID/Secret；不填则弹弹play 弹幕源不可用（官方构建也是用私有密钥） |
 
-2. Actions → **Harmony Release** → Run workflow，`upstream_tag` 留空、`patch_number` 填 `1`，约 30–60 分钟出包。
+需要手动出包时：Actions → **Harmony Release** → Run workflow，`upstream_tag` 留空、`patch_number` 填 `1`（重打包则递增），约 15 分钟出包。
 
 维护说明（如何 rebase 补丁、排错等）见 [`.github/HARMONY.md`](./.github/HARMONY.md)。
 
