@@ -1,0 +1,509 @@
+From 8ae41a6684604e3caba5d4e5fe0edba04bd3f3a3 Mon Sep 17 00:00:00 2001
+From: Xun2202 <xun2202@users.noreply.github.com>
+Date: Fri, 2 Oct 2026 05:11:43 +0000
+Subject: [PATCH] android: keep the app process alive while web-source caches
+ download
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Web-source (HTTP / m3u8) caches are downloaded by KtorHttpDownloader
+inside the app process. Only the BT engine has a foreground service, and
+that one lives in :torrent_service, so an HTTP cache has no notification
+and nothing stops the system from freezing the app process once it goes
+to the background. On HarmonyOS 卓易通 the freeze is immediate: a log
+from a device shows all segment requests stalling the moment the app is
+backgrounded and timing out 22 minutes later when it was reopened.
+
+Add HttpCacheService, a dataSync foreground service in the app process
+that runs while any in-process cache is IN_PROGRESS, shows a progress
+notification with a "pause all" action, and honours the Android 15
+dataSync timeout. HttpCacheServiceController starts and stops it from
+MediaDownloadManager snapshots. ServiceNotification gains notificationId
+/ channelId / stop-intent parameters so both services can share it; the
+BT service keeps the previous values via defaults. Mirrors upstream
+main's PikPakCacheService, which solves the same problem for PikPak.
+---
+ app/android/src/default/AndroidManifest.xml   |   8 +
+ .../src/default/kotlin/AniApplication.kt      |  10 +
+ .../torrent/service/HttpCacheService.kt       | 190 ++++++++++++++++++
+ .../service/HttpCacheServiceController.kt     |  93 +++++++++
+ .../torrent/service/ServiceNotification.kt    |  38 +++-
+ .../src/androidMain/res/values-zh/strings.xml |   8 +
+ .../src/androidMain/res/values/strings.xml    |   8 +
+ 7 files changed, 344 insertions(+), 11 deletions(-)
+ create mode 100644 app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
+ create mode 100644 app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
+ create mode 100644 app/shared/app-data/src/androidMain/res/values-zh/strings.xml
+ create mode 100644 app/shared/app-data/src/androidMain/res/values/strings.xml
+
+diff --git a/app/android/src/default/AndroidManifest.xml b/app/android/src/default/AndroidManifest.xml
+index 56dc04e..8a50aae 100644
+--- a/app/android/src/default/AndroidManifest.xml
++++ b/app/android/src/default/AndroidManifest.xml
+@@ -95,5 +95,13 @@
+                 android:foregroundServiceType="dataSync"
+                 android:process=":torrent_service" />
+ 
++        <!-- No android:process: the HTTP cache engine runs in the app process and this service exists
++             to keep that process running. -->
++        <service
++                android:name="me.him188.ani.app.domain.torrent.service.HttpCacheService"
++                android:enabled="true"
++                android:exported="false"
++                android:foregroundServiceType="dataSync" />
++
+     </application>
+ </manifest>
+diff --git a/app/android/src/default/kotlin/AniApplication.kt b/app/android/src/default/kotlin/AniApplication.kt
+index a405425..5c7cf87 100644
+--- a/app/android/src/default/kotlin/AniApplication.kt
++++ b/app/android/src/default/kotlin/AniApplication.kt
+@@ -34,6 +34,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
+ import me.him188.ani.app.data.repository.user.UserRepository
+ import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
+ import me.him188.ani.app.domain.torrent.service.AniTorrentService
++import me.him188.ani.app.domain.torrent.service.HttpCacheServiceController
+ import me.him188.ani.app.domain.torrent.service.TorrentServiceConnectionManager
+ import me.him188.ani.app.platform.AndroidLoggingConfigurator
+ import me.him188.ani.app.platform.AppStartupTasks
+@@ -182,6 +183,15 @@ class AniApplication : Application() {
+         mediaCacheBaseSaveDir.value = File(koin.get<MediaSaveDirProvider>().saveDir)
+         connectionManager.launchCheckLoop()
+ 
++        // The BT service above runs in :torrent_service and does nothing for this process, so
++        // web-source caches get their own foreground service here.
++        HttpCacheServiceController(
++            context = this,
++            downloadManager = koin.get(),
++            processLifecycle = ProcessLifecycleOwner.get().lifecycle,
++            scope = scope,
++        ).start()
++
+         runBlocking { analyticsInitializer.join() }
+         ExternalContentProviderFactoryImpl.initializeApp(this)
+         startupTimeMonitor.mark(StepName.Analytics)
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
+new file mode 100644
+index 0000000..f38e454
+--- /dev/null
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
+@@ -0,0 +1,190 @@
++/*
++ * Copyright (C) 2024-2026 OpenAni and contributors.
++ *
++ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
++ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
++ *
++ * https://github.com/open-ani/ani/blob/main/LICENSE
++ */
++
++package me.him188.ani.app.domain.torrent.service
++
++import android.content.Intent
++import android.graphics.drawable.Icon
++import androidx.lifecycle.LifecycleService
++import androidx.lifecycle.lifecycleScope
++import kotlinx.coroutines.flow.Flow
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.collect
++import kotlinx.coroutines.flow.distinctUntilChanged
++import kotlinx.coroutines.flow.map
++import kotlinx.coroutines.flow.onEach
++import kotlinx.coroutines.launch
++import me.him188.ani.app.data.R
++import me.him188.ani.app.domain.media.cache.MediaCacheState
++import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
++import me.him188.ani.app.domain.media.download.DownloadOperation
++import me.him188.ani.app.domain.media.download.DownloadOperations
++import me.him188.ani.app.domain.media.download.MediaDownloadManager
++import me.him188.ani.datasources.api.topic.FileSize
++import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
++import me.him188.ani.utils.logging.info
++import me.him188.ani.utils.logging.logger
++import org.koin.core.component.KoinComponent
++import org.koin.core.component.inject
++
++/**
++ * Keeps the app process alive while web-source (HTTP / m3u8) caches are downloading.
++ *
++ * The HTTP cache engine runs inside the app process, while [AniTorrentService] is declared with
++ * `android:process=":torrent_service"` and therefore only protects that other process. Without a
++ * foreground service here, the system freezes the app process shortly after it goes to the
++ * background and the downloads stall until the user reopens the app. HarmonyOS 卓易通 does this
++ * immediately on backgrounding, and also shows no notification for the download at all.
++ */
++class HttpCacheService : LifecycleService(), KoinComponent {
++    private val logger = logger<HttpCacheService>()
++
++    private val downloadManager: MediaDownloadManager by inject()
++    private val downloadOperations: DownloadOperations by inject()
++
++    private val notification = ServiceNotification(
++        this,
++        notificationId = NOTIFICATION_ID,
++        channelId = NOTIFICATION_CHANNEL_ID,
++        buildStopServiceIntent = { context ->
++            Intent(context, HttpCacheService::class.java)
++                .apply { putExtra(INTENT_STOP_EXTRA, true) }
++        },
++    )
++
++    override fun onCreate() {
++        super.onCreate()
++
++        notification.setAppearance(
++            NotificationAppearance(
++                name = getString(R.string.http_cache_service_name),
++                titleIdle = getString(R.string.http_cache_service_title_idle),
++                titleWorking = getString(R.string.http_cache_service_title_working),
++                // HTTP caches never upload, so the appearance drops the second format argument.
++                content = getString(R.string.http_cache_service_content),
++                stopActionText = getString(R.string.http_cache_service_pause_all),
++                icon = Icon.createWithResource(this, applicationInfo.icon),
++            ),
++            // Resolved here rather than passed in the start Intent so that a sticky restart, which
++            // delivers a null Intent, still produces a tappable notification.
++            openActivityIntent = packageManager.getLaunchIntentForPackage(packageName),
++        )
++
++        lifecycleScope.launch {
++            httpDownloadActivity(downloadManager)
++                .onEach { activity ->
++                    notification.updateNotification(
++                        if (activity.taskCount > 0) {
++                            NotificationDisplayStrategy.Working(
++                                activity.downloadSpeed,
++                                FileSize.Zero,
++                                activity.taskCount,
++                            )
++                        } else {
++                            NotificationDisplayStrategy.Idle(activity.downloadSpeed, FileSize.Zero)
++                        },
++                    )
++                }
++                .collect()
++        }
++    }
++
++    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
++        super.onStartCommand(intent, flags, startId)
++
++        if (intent?.getBooleanExtra(INTENT_STOP_EXTRA, false) == true) {
++            // The action has to pause the downloads, not merely hide the notification:
++            // HttpCacheServiceController would otherwise still see unfinished downloads and
++            // start the service straight back up.
++            pauseAllDownloads()
++            stopSelf()
++            return START_NOT_STICKY
++        }
++
++        if (!notification.createNotification(this)) {
++            // The system refused the foreground start. Staying alive would miss the 5 second
++            // startForeground deadline and crash the app process.
++            logger.info { "Foreground start was refused, stopping HttpCacheService." }
++            stopSelf()
++            return START_NOT_STICKY
++        }
++
++        isRunning.value = true
++        return START_STICKY
++    }
++
++    override fun onDestroy() {
++        isRunning.value = false
++        super.onDestroy()
++    }
++
++    private fun pauseAllDownloads() {
++        val ids = downloadManager.downloads.value
++            .filter { it.engineKey.isInProcess() }
++            .map { it.id }
++            .toSet()
++        if (ids.isEmpty()) return
++        // Runs on the application scope inside DownloadOperations, so it outlives this service.
++        downloadOperations.submit(ids, DownloadOperation.Pause)
++    }
++
++    // Downloads are left as they are: the controller starts the service again once the process
++    // returns to the foreground, and they carry on from there.
++    override fun onTimeout(startId: Int, fgsType: Int) {
++        super.onTimeout(startId, fgsType)
++        backgroundTimedOut.value = true
++        stopSelf()
++    }
++
++    companion object {
++        // Android's dataSync budget resets when the app returns to the foreground.
++        internal val backgroundTimedOut = MutableStateFlow(false)
++        internal val isRunning = MutableStateFlow(false)
++
++        const val INTENT_STOP_EXTRA = "stopService"
++
++        private const val NOTIFICATION_ID = 116
++        private const val NOTIFICATION_CHANNEL_ID =
++            "me.him188.ani.app.domain.torrent.service.HttpCacheService"
++    }
++}
++
++/**
++ * Every engine other than BT runs in the app process. Checked by exclusion so that any engine added
++ * later is covered by default; if upstream gives such an engine its own foreground service, exclude
++ * it here as well.
++ */
++internal fun MediaCacheEngineKey.isInProcess(): Boolean = this != MediaCacheEngineKey.Anitorrent
++
++/**
++ * Transfer state of the in-process downloads, as the notification and the service lifecycle need it.
++ */
++internal data class HttpDownloadActivity(
++    val taskCount: Int,
++    val downloadSpeed: FileSize,
++)
++
++/**
++ * Only [MediaCacheState.IN_PROGRESS] counts: a paused or failed record fetches nothing, and keeping
++ * a foreground service for it would pin the process for no reason.
++ */
++internal fun httpDownloadActivity(manager: MediaDownloadManager): Flow<HttpDownloadActivity> =
++    manager.snapshots()
++        .map { snapshots ->
++            val active = snapshots.filter {
++                it.engineKey.isInProcess() && it.status == MediaCacheState.IN_PROGRESS
++            }
++            HttpDownloadActivity(
++                taskCount = active.size,
++                downloadSpeed = active
++                    .sumOf { snapshot -> snapshot.downloadSpeed.takeIf { !it.isUnspecified }?.inBytes ?: 0L }
++                    .bytes,
++            )
++        }
++        .distinctUntilChanged()
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
+new file mode 100644
+index 0000000..754e07e
+--- /dev/null
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
+@@ -0,0 +1,93 @@
++/*
++ * Copyright (C) 2024-2026 OpenAni and contributors.
++ *
++ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
++ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
++ *
++ * https://github.com/open-ani/ani/blob/main/LICENSE
++ */
++
++package me.him188.ani.app.domain.torrent.service
++
++import android.content.Context
++import android.content.Intent
++import androidx.core.content.ContextCompat
++import androidx.lifecycle.Lifecycle
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.flow.collect
++import kotlinx.coroutines.flow.combine
++import kotlinx.coroutines.flow.distinctUntilChanged
++import kotlinx.coroutines.flow.map
++import kotlinx.coroutines.flow.onEach
++import kotlinx.coroutines.launch
++import me.him188.ani.app.domain.media.download.MediaDownloadManager
++import me.him188.ani.utils.logging.info
++import me.him188.ani.utils.logging.logger
++import me.him188.ani.utils.logging.warn
++
++/**
++ * Starts [HttpCacheService] while any in-process download is in progress and stops it afterwards.
++ *
++ * The decision lives here rather than in the service so that there is a single place that knows
++ * whether the service should exist; the service renders the notification and handles system timeouts.
++ */
++class HttpCacheServiceController(
++    private val context: Context,
++    private val downloadManager: MediaDownloadManager,
++    private val processLifecycle: Lifecycle,
++    private val scope: CoroutineScope,
++) {
++    private val logger = logger<HttpCacheServiceController>()
++
++    fun start() {
++        scope.launch {
++            combine(
++                httpDownloadActivity(downloadManager).map { it.taskCount > 0 },
++                // Not part of the decision, only a retry trigger: a start refused in the background
++                // gets another attempt when the process returns to the foreground.
++                processLifecycle.currentStateFlow,
++                HttpCacheService.backgroundTimedOut,
++                HttpCacheService.isRunning,
++            ) { shouldRun, processState, timedOut, serviceRunning ->
++                ServiceControlState(shouldRun, processState, timedOut, serviceRunning)
++            }
++                .distinctUntilChanged()
++                .onEach { (shouldRun, processState, timedOut, serviceRunning) ->
++                    if (timedOut) {
++                        stopService()
++                        if (processState.isAtLeast(Lifecycle.State.RESUMED)) {
++                            HttpCacheService.backgroundTimedOut.value = false
++                        }
++                        return@onEach
++                    }
++                    when {
++                        shouldRun && !serviceRunning -> startService()
++                        !shouldRun && serviceRunning -> stopService()
++                    }
++                }
++                .collect()
++        }
++    }
++
++    private fun startService() {
++        try {
++            ContextCompat.startForegroundService(context, Intent(context, HttpCacheService::class.java))
++            logger.info { "HttpCacheService start requested." }
++        } catch (e: IllegalStateException) {
++            // The next process-lifecycle change retries while the service still reports stopped.
++            logger.warn { "Failed to start HttpCacheService: $e" }
++        }
++    }
++
++    private fun stopService() {
++        context.stopService(Intent(context, HttpCacheService::class.java))
++        logger.info { "HttpCacheService stopped." }
++    }
++}
++
++private data class ServiceControlState(
++    val shouldRun: Boolean,
++    val processState: Lifecycle.State,
++    val timedOut: Boolean,
++    val serviceRunning: Boolean,
++)
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
+index 3bacfd3..e48b949 100644
+--- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
+@@ -27,8 +27,20 @@ import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
+ import me.him188.ani.utils.logging.logger
+ import me.him188.ani.utils.logging.warn
+ 
++/**
++ * @param notificationId must differ per service: notification ids are scoped to the package, not to
++ * the process, so two services sharing one id would overwrite each other's notification.
++ * @param buildStopServiceIntent a factory rather than a ready [PendingIntent] because a [Service]
++ * creates this helper in a field initializer, before its base context is attached.
++ */
+ class ServiceNotification(
+-    private val context: Context
++    private val context: Context,
++    private val notificationId: Int = TORRENT_NOTIFICATION_ID,
++    private val channelId: String = TORRENT_NOTIFICATION_CHANNEL_ID,
++    private val buildStopServiceIntent: (Context) -> Intent = { ctx ->
++        Intent(ctx, AniTorrentService.actualServiceClass)
++            .apply { putExtra(AniTorrentService.INTENT_STOP_EXTRA, true) }
++    },
+ ) {
+     private val notificationService by lazy { context.getSystemService(NOTIFICATION_SERVICE) as NotificationManager }
+ 
+@@ -55,17 +67,16 @@ class ServiceNotification(
+     private var lastDisplayStrategy: NotificationDisplayStrategy = NotificationDisplayStrategy.Idle(0.bytes, 0.bytes)
+     private val stopServiceIntent by lazy {
+         PendingIntent.getService(
+-            context, 0,
+-            Intent(context, AniTorrentService.actualServiceClass)
+-                .apply { putExtra(AniTorrentService.INTENT_STOP_EXTRA, true) },
++            context, notificationId,
++            buildStopServiceIntent(context),
+             PendingIntent.FLAG_IMMUTABLE,
+         )
+     }
+ 
+     private val notificationChannel by lazy {
+-        notificationService.getNotificationChannel(NOTIFICATION_CHANNEL_ID)
++        notificationService.getNotificationChannel(channelId)
+             ?: NotificationChannel(
+-                NOTIFICATION_CHANNEL_ID,
++                channelId,
+                 notificationAppearance.name,
+                 NotificationManager.IMPORTANCE_LOW,
+             )
+@@ -73,6 +84,11 @@ class ServiceNotification(
+                 .also { notificationService.createNotificationChannel(it) }
+     }
+ 
++    fun setAppearance(appearance: NotificationAppearance, openActivityIntent: Intent?) {
++        notificationAppearance = appearance
++        notificationOpenActivityIntent = openActivityIntent
++    }
++
+     fun parseNotificationStrategyFromIntent(intent: Intent?) {
+         // parse notification appearance first if present
+         val appearance = intent?.getParcelable<NotificationAppearance>("notification_appearance")
+@@ -127,7 +143,7 @@ class ServiceNotification(
+ 
+         val notification = buildNotification(notificationAppearance, lastDisplayStrategy)
+         return try {
+-            service.startForeground(NOTIFICATION_ID, notification)
++            service.startForeground(notificationId, notification)
+             isForeground = true
+             true
+         } catch (e: IllegalStateException) {
+@@ -154,7 +170,7 @@ class ServiceNotification(
+         if (!isForeground) return
+ 
+         val notification = buildNotification(notificationAppearance, displayStrategy)
+-        notificationService.notify(NOTIFICATION_ID, notification)
++        notificationService.notify(notificationId, notification)
+     }
+ 
+     /**
+@@ -170,7 +186,7 @@ class ServiceNotification(
+         }
+         val channelImportance = runCatching { notificationChannel.importance }.getOrNull() ?: return
+         if (channelImportance == NotificationManager.IMPORTANCE_NONE) {
+-            logger.warn { "Notification channel $NOTIFICATION_CHANNEL_ID is blocked by the user; the foreground service notification will not be visible." }
++            logger.warn { "Notification channel $channelId is blocked by the user; the foreground service notification will not be visible." }
+         }
+     }
+ 
+@@ -234,8 +250,8 @@ class ServiceNotification(
+     }
+ 
+     companion object {
+-        private const val NOTIFICATION_ID = 114
+-        private const val NOTIFICATION_CHANNEL_ID = "me.him188.ani.app.domain.torrent.service.AniTorrentService"
++        internal const val TORRENT_NOTIFICATION_ID = 114
++        internal const val TORRENT_NOTIFICATION_CHANNEL_ID = "me.him188.ani.app.domain.torrent.service.AniTorrentService"
+         private val logger = logger<ServiceNotification>()
+ 
+         private val defaultNotificationAppearance = NotificationAppearance(
+diff --git a/app/shared/app-data/src/androidMain/res/values-zh/strings.xml b/app/shared/app-data/src/androidMain/res/values-zh/strings.xml
+new file mode 100644
+index 0000000..897799b
+--- /dev/null
++++ b/app/shared/app-data/src/androidMain/res/values-zh/strings.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="http_cache_service_name">Animeko 在线源缓存</string>
++    <string name="http_cache_service_title_idle">在线源缓存服务正在运行</string>
++    <string name="http_cache_service_title_working">正在缓存 %1$d 个资源</string>
++    <string name="http_cache_service_content">下载：%1$s</string>
++    <string name="http_cache_service_pause_all">暂停全部</string>
++</resources>
+diff --git a/app/shared/app-data/src/androidMain/res/values/strings.xml b/app/shared/app-data/src/androidMain/res/values/strings.xml
+new file mode 100644
+index 0000000..bf0b881
+--- /dev/null
++++ b/app/shared/app-data/src/androidMain/res/values/strings.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="http_cache_service_name">Animeko web cache</string>
++    <string name="http_cache_service_title_idle">Web cache service is running</string>
++    <string name="http_cache_service_title_working">Caching %1$d resource(s)</string>
++    <string name="http_cache_service_content">Download: %1$s</string>
++    <string name="http_cache_service_pause_all">Pause all</string>
++</resources>
+-- 
+2.43.0
+

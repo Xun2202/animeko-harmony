@@ -34,6 +34,7 @@ patches/
   0001-android-harden-foreground-service-notification.patch
   0002-updater-use-harmony-fork-releases.patch
   0003-android-use-harmony-application-id.patch
+  0004-android-foreground-service-for-http-caches.patch
 scripts/prepare-source.sh                  # 套补丁 + 改更新器仓库名 + 改版本号, workflow 和本地都用它
 .github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release
 .github/workflows/check_patches.yml        # 补丁能否套到上游最新稳定版 / main
@@ -69,6 +70,17 @@ docs/ANALYSIS.md                           # 问题分析与真机取证方法
 为什么必须有这个补丁：卓易通安装 APK 时按包名查应用目录，命中官方 `me.him188.ani` 但签名不匹配就拒绝，系统随后交给出境易，用户看到「出境易暂不支持安装该应用」。`v6.2.0-harmony.1` 就是这样装不上的。改成独立包名后卓易通把它当成未知应用正常安装，副作用是 `ani://` deep link（扫码登录、分享）在两个版本同时安装时会弹选择框。
 
 rebase 时留意：上游如果把 `applicationId` 挪到 `gradle.properties` 或改了 `APP_APPLICATION_ID` 的定义方式，按新位置改即可，目标值不变。
+
+### 0004 在线源缓存前台服务（`app/shared/app-data/.../torrent/service/`）
+
+- 新增 `HttpCacheService`（`LifecycleService`，`dataSync` 类型，**不**设 `android:process`，就跑在主进程）和 `HttpCacheServiceController`。控制器观察 `MediaDownloadManager.snapshots()`，只要有 `engineKey != Anitorrent` 且 `IN_PROGRESS` 的缓存就 `startForegroundService`，没有了就 `stopService`；服务里只负责 `startForeground` + 更新通知 + 处理 Android 15 的 `onTimeout`。通知的「暂停全部」会真的把这些缓存暂停，否则控制器会立刻再把服务拉起来。
+- `ServiceNotification` 构造函数增加 `notificationId` / `channelId` / `buildStopServiceIntent` 参数（默认值即原来 BT 服务的取值），常量改名 `TORRENT_NOTIFICATION_ID` / `TORRENT_NOTIFICATION_CHANNEL_ID`，新增 `setAppearance()`。参数名、常量名与上游 `main` 的重构保持一致，rebase 时冲突少。
+- 字符串放在 `app/shared/app-data/src/androidMain/res/values{,-zh}/strings.xml`（`http_cache_service_*`），`R` 为 `me.him188.ani.app.data.R`。
+- `app/android/src/default/AndroidManifest.xml` 声明服务；`AniApplication.onCreate` 在 `connectionManager.launchCheckLoop()` 后 `HttpCacheServiceController(...).start()`。
+
+为什么必须有这个补丁：在线源缓存由 `KtorHttpDownloader` 在主进程下载，上游没有为它做前台服务（BT 服务在 `:torrent_service` 进程，保护不到主进程）。真机日志（6.2.0-harmony.3）显示：12:35:49 退后台后所有分片请求瞬间停止，12:57:38 回到前台才以 `Socket timeout` 失败并重试——整整 22 分钟进程被冻结。这也是用户反馈「没有通知、流量归零」的真正原因；补丁 0001 针对的 BT 路径在那次测试里根本没走到。
+
+rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheService`（过滤 `engineKey == PikPak`），并且 `ServiceNotification` 的重构与本补丁相同。下个稳定版 rebase 时：`ServiceNotification` 部分直接丢弃（上游已有）；`HttpCacheService` 的 `isInProcess()` 要改成 `!= Anitorrent && != PikPak`，避免两个服务同时为 PikPak 缓存挂通知。更干净的做法是把上游 `PikPakCacheService` 泛化成覆盖全部进程内引擎，然后给上游提 PR。
 
 ## 5. 日常操作
 

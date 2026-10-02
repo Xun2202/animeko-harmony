@@ -40,8 +40,9 @@
 
 | 补丁 | 作用 |
 | --- | --- |
-| [`0001-android-harden-foreground-service-notification.patch`](./patches/0001-android-harden-foreground-service-notification.patch) | BT 下载前台服务每次都真正调用 `startForeground()`，不再依赖 `activeNotifications` 判断；修复卓易通下开始下载后通知不更新、切后台/锁屏后下载停止的问题。详细分析见 [`docs/ANALYSIS.md`](./docs/ANALYSIS.md)。 |
+| [`0001-android-harden-foreground-service-notification.patch`](./patches/0001-android-harden-foreground-service-notification.patch) | BT 下载前台服务每次都真正调用 `startForeground()`，不再依赖 `activeNotifications` 判断；只影响 **BT 源**缓存；在线源缓存见 0004。详细分析见 [`docs/ANALYSIS.md`](./docs/ANALYSIS.md)。 |
 | [`0002-updater-use-harmony-fork-releases.patch`](./patches/0002-updater-use-harmony-fork-releases.patch) | 版本号为 `x.y.z-harmony.N` 时，应用内更新改查本仓库 GitHub Releases，并按 `(x, y, z, N)` 比较版本；否则官方更新服务器会把它当成 `x.y.z` 的预发布版而推送官方 APK（签名不同无法安装）。 |
+| [`0004-android-foreground-service-for-http-caches.patch`](./patches/0004-android-foreground-service-for-http-caches.patch) | 在线源（HTTP / m3u8）缓存原本在主进程里直接下载，没有任何前台服务和通知，App 一退后台进程就被冻结、下载停摆。新增 `HttpCacheService`：有在线源缓存进行中时在主进程挂一个 `dataSync` 前台服务并显示进度通知（带「暂停全部」），缓存完成后自动退出。与上游 `main` 为 PikPak 做的 `PikPakCacheService` 同一思路。 |
 | [`0003-android-use-harmony-application-id.patch`](./patches/0003-android-use-harmony-application-id.patch) | `applicationId` 改为 `me.him188.ani.harmony`（应用名保持「Animeko」），并同步 `AndroidBuildConfig.APP_APPLICATION_ID`（FileProvider authority 由它拼出）。绕过卓易通对已知包名的签名校验，并允许与官方版共存。 |
 
 补丁按 [`patches/series`](./patches/series) 的顺序套用。
