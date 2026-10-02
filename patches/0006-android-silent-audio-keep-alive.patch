@@ -1,0 +1,213 @@
+From be2643236d1ff5d56e840c7be06d5e7ce95cacdc Mon Sep 17 00:00:00 2001
+From: Xun2202 <xun2202@users.noreply.github.com>
+Date: Fri, 2 Oct 2026 07:06:33 +0000
+Subject: [PATCH] android: play a silent audio loop while web-source caches
+ download
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+On HarmonyOS 卓易通 the app process is suspended within seconds of
+leaving the foreground even with a dataSync foreground service, a partial
+wake lock and a battery-optimisation exemption (6.2.0-harmony.5 log:
+last progress 14:55:44, requests thawed and timed out at 14:58:51 when
+the user reopened the app). Audio output is what the host keeps running,
+so HttpCacheService becomes a mediaPlayback service and loops a silent
+MODE_STATIC AudioTrack for its lifetime. No audio focus is requested, so
+other apps' playback is unaffected; the loop is driven by the audio HAL
+and costs no CPU. The environment (Build fields, cgroup) is logged once
+per start to tell compatibility layers apart in bug reports.
+
+Also dedupe the controller's start requests, which fired three times per
+download start because several upstream flows emit before isRunning flips.
+---
+ app/android/src/default/AndroidManifest.xml   |  2 +-
+ .../torrent/service/HttpCacheService.kt       |  8 ++
+ .../service/HttpCacheServiceController.kt     | 10 +-
+ .../torrent/service/SilentAudioKeepAlive.kt   | 93 +++++++++++++++++++
+ 4 files changed, 111 insertions(+), 2 deletions(-)
+ create mode 100644 app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/SilentAudioKeepAlive.kt
+
+diff --git a/app/android/src/default/AndroidManifest.xml b/app/android/src/default/AndroidManifest.xml
+index 731e431..8f87d04 100644
+--- a/app/android/src/default/AndroidManifest.xml
++++ b/app/android/src/default/AndroidManifest.xml
+@@ -102,7 +102,7 @@
+                 android:name="me.him188.ani.app.domain.torrent.service.HttpCacheService"
+                 android:enabled="true"
+                 android:exported="false"
+-                android:foregroundServiceType="dataSync" />
++                android:foregroundServiceType="mediaPlayback" />
+ 
+     </application>
+ </manifest>
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
+index 19939e1..1c5e5fd 100644
+--- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
+@@ -39,6 +39,10 @@ import org.koin.core.component.inject
+ /**
+  * Keeps the app process alive while web-source (HTTP / m3u8) caches are downloading.
+  *
++ * Declared as a `mediaPlayback` service and backed by [SilentAudioKeepAlive]: on HarmonyOS 卓易通 a
++ * plain `dataSync` service is suspended seconds after the app leaves the foreground, audio playback
++ * is what the host keeps running.
++ *
+  * The HTTP cache engine runs inside the app process, while [AniTorrentService] is declared with
+  * `android:process=":torrent_service"` and therefore only protects that other process. Without a
+  * foreground service here, the system freezes the app process shortly after it goes to the
+@@ -61,6 +65,8 @@ class HttpCacheService : LifecycleService(), KoinComponent {
+             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Animeko:HttpCacheService")
+     }
+ 
++    private val silentAudio = SilentAudioKeepAlive()
++
+     private val notification = ServiceNotification(
+         this,
+         notificationId = NOTIFICATION_ID,
+@@ -129,12 +135,14 @@ class HttpCacheService : LifecycleService(), KoinComponent {
+         }
+ 
+         acquireWakeLock()
++        silentAudio.start()
+         isRunning.value = true
+         return START_STICKY
+     }
+ 
+     override fun onDestroy() {
+         isRunning.value = false
++        silentAudio.stop()
+         releaseWakeLock()
+         super.onDestroy()
+     }
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
+index 9062d87..f73a721 100644
+--- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
+@@ -39,6 +39,11 @@ class HttpCacheServiceController(
+ ) {
+     private val logger = logger<HttpCacheServiceController>()
+ 
++    // Several upstream flows emit before HttpCacheService.isRunning flips; one start request per
++    // process-lifecycle state is enough, and a refused start is retried on the next state change.
++    private var startRequested = false
++    private var lastProcessState: Lifecycle.State? = null
++
+     fun start() {
+         scope.launch {
+             combine(
+@@ -60,8 +65,11 @@ class HttpCacheServiceController(
+                         }
+                         return@onEach
+                     }
++                    if (serviceRunning || !shouldRun || processState != lastProcessState) startRequested = false
++                    lastProcessState = processState
+                     when {
+-                        shouldRun && !serviceRunning -> {
++                        shouldRun && !serviceRunning && !startRequested -> {
++                            startRequested = true
+                             startService()
+                             // Only while the user is looking at the app: the system dialog would be
+                             // swallowed (or counted as a background activity start) otherwise.
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/SilentAudioKeepAlive.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/SilentAudioKeepAlive.kt
+new file mode 100644
+index 0000000..a75fa0f
+--- /dev/null
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/SilentAudioKeepAlive.kt
+@@ -0,0 +1,93 @@
++/*
++ * Copyright (C) 2024-2026 OpenAni and contributors.
++ *
++ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
++ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
++ *
++ * https://github.com/open-ani/ani/blob/main/LICENSE
++ */
++
++package me.him188.ani.app.domain.torrent.service
++
++import android.media.AudioAttributes
++import android.media.AudioFormat
++import android.media.AudioTrack
++import android.os.Build
++import me.him188.ani.utils.logging.info
++import me.him188.ani.utils.logging.logger
++import me.him188.ani.utils.logging.warn
++import java.io.File
++
++/**
++ * Loops a silent PCM buffer for as long as the owning service runs.
++ *
++ * HarmonyOS 卓易通 suspends an Android app's process a few seconds after it leaves the foreground even
++ * when it holds a `dataSync` foreground service, a wake lock and a battery-optimisation exemption
++ * (verified on-device, see HARMONY.md). Audio output is the one activity the host treats as a reason to
++ * keep the container running, since background music is the main use case for it. The track is
++ * written once and looped by the audio HAL in [AudioTrack.MODE_STATIC], so it costs no CPU; audio focus
++ * is deliberately not requested, so other apps' playback is not ducked or paused.
++ */
++internal class SilentAudioKeepAlive {
++    private val logger = logger<SilentAudioKeepAlive>()
++    private var track: AudioTrack? = null
++
++    fun start() {
++        if (track != null) return
++        try {
++            val minBuffer = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL, ENCODING)
++            val bufferSize = maxOf(minBuffer, SAMPLE_RATE * BYTES_PER_FRAME) // >= 1 second
++            val newTrack = AudioTrack.Builder()
++                .setAudioAttributes(
++                    AudioAttributes.Builder()
++                        .setUsage(AudioAttributes.USAGE_MEDIA)
++                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
++                        .build(),
++                )
++                .setAudioFormat(
++                    AudioFormat.Builder()
++                        .setSampleRate(SAMPLE_RATE)
++                        .setEncoding(ENCODING)
++                        .setChannelMask(CHANNEL)
++                        .build(),
++                )
++                .setBufferSizeInBytes(bufferSize)
++                .setTransferMode(AudioTrack.MODE_STATIC)
++                .build()
++            val silence = ByteArray(bufferSize)
++            newTrack.write(silence, 0, silence.size)
++            newTrack.setLoopPoints(0, bufferSize / BYTES_PER_FRAME, -1)
++            newTrack.play()
++            track = newTrack
++            logger.info { "Silent audio keep-alive started. ${describeEnvironment()}" }
++        } catch (e: Exception) {
++            logger.warn { "Failed to start silent audio keep-alive: $e" }
++        }
++    }
++
++    fun stop() {
++        val current = track ?: return
++        track = null
++        runCatching {
++            current.stop()
++            current.release()
++        }
++        logger.info { "Silent audio keep-alive stopped." }
++    }
++
++    /**
++     * Logged once per start so bug reports show which compatibility layer, if any, we run under.
++     */
++    private fun describeEnvironment(): String {
++        val cgroup = runCatching { File("/proc/self/cgroup").readText().lines().firstOrNull { it.isNotBlank() } }
++            .getOrNull()
++        return "build=${Build.MANUFACTURER}/${Build.BRAND}/${Build.MODEL}/${Build.DEVICE}, sdk=${Build.VERSION.SDK_INT}, cgroup=$cgroup"
++    }
++
++    private companion object {
++        const val SAMPLE_RATE = 8000
++        const val CHANNEL = AudioFormat.CHANNEL_OUT_MONO
++        const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
++        const val BYTES_PER_FRAME = 2
++    }
++}
+-- 
+2.43.0
+

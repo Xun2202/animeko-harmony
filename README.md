@@ -34,7 +34,7 @@
 
 ### 让下载在后台继续（必做）
 
-鸿蒙会在 App 退后台后几秒内冻结进程，前台服务和通知**不足以**阻止，这和 FlClash 之类能一直跑的应用的区别在于系统侧的设置。装好后请做一次：
+鸿蒙会在 App 退后台后几秒内冻结进程，前台服务和通知**不足以**阻止。从 `harmony.6` 起 App 在缓存期间会播放一段静音音轨来保活（卓易通只对音频播放网开一面）；系统侧的设置仍建议做一次：
 
 1. 鸿蒙 设置 → 应用和服务 → **应用启动管理** → 找到 **Animeko**（找不到就找 **卓易通**）→ 关闭「自动管理」→ 勾选「允许自启动」「允许关联启动」「**允许后台活动**」。
 2. 第一次开始缓存时，App 会弹出 Android 的「忽略电池优化」请求，选**允许**。拒绝过的话到卓易通里 Animeko 的应用信息 → 电池 里手动改。
@@ -55,6 +55,7 @@
 | [`0002-updater-use-harmony-fork-releases.patch`](./patches/0002-updater-use-harmony-fork-releases.patch) | 版本号为 `x.y.z-harmony.N` 时，应用内更新改查本仓库 GitHub Releases，并按 `(x, y, z, N)` 比较版本；否则官方更新服务器会把它当成 `x.y.z` 的预发布版而推送官方 APK（签名不同无法安装）。 |
 | [`0004-android-foreground-service-for-http-caches.patch`](./patches/0004-android-foreground-service-for-http-caches.patch) | 在线源（HTTP / m3u8）缓存原本在主进程里直接下载，没有任何前台服务和通知，App 一退后台进程就被冻结、下载停摆。新增 `HttpCacheService`：有在线源缓存进行中时在主进程挂一个 `dataSync` 前台服务并显示进度通知（带「暂停全部」），缓存完成后自动退出。与上游 `main` 为 PikPak 做的 `PikPakCacheService` 同一思路。 |
 | [`0005-android-battery-exemption-and-wake-lock.patch`](./patches/0005-android-battery-exemption-and-wake-lock.patch) | 第一次开始在线源缓存时请求「忽略电池优化」（FlClash 等能常驻后台的应用都这么做），`HttpCacheService` 存活期间持有 partial WakeLock。应对鸿蒙在前台服务存在时仍冻结进程的情况。 |
+| [`0006-android-silent-audio-keep-alive.patch`](./patches/0006-android-silent-audio-keep-alive.patch) | `HttpCacheService` 改为 `mediaPlayback` 类型，存活期间循环播放一段静音音轨（不申请音频焦点，不影响其他 App 放音）。实测卓易通对 dataSync 前台服务 + WakeLock + 电池豁免仍在退后台几秒内冻结进程，只有音频播放会被宿主保活。 |
 | [`0003-android-use-harmony-application-id.patch`](./patches/0003-android-use-harmony-application-id.patch) | `applicationId` 改为 `me.him188.ani.harmony`（应用名保持「Animeko」），并同步 `AndroidBuildConfig.APP_APPLICATION_ID`（FileProvider authority 由它拼出）。绕过卓易通对已知包名的签名校验，并允许与官方版共存。 |
 
 补丁按 [`patches/series`](./patches/series) 的顺序套用。

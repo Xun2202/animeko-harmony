@@ -36,6 +36,7 @@ patches/
   0003-android-use-harmony-application-id.patch
   0004-android-foreground-service-for-http-caches.patch
   0005-android-battery-exemption-and-wake-lock.patch
+  0006-android-silent-audio-keep-alive.patch
 scripts/prepare-source.sh                  # 套补丁 + 改更新器仓库名 + 改版本号, workflow 和本地都用它
 .github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release
 .github/workflows/check_patches.yml        # 补丁能否套到上游最新稳定版 / main
@@ -89,7 +90,17 @@ rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheServi
 - `HttpCacheService` 在 `startForeground` 成功后持有 `PARTIAL_WAKE_LOCK`，`onDestroy` 释放。
 - manifest 增加 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`。
 
-为什么：harmony.4 的截图显示通知出来了但 2 分钟后仍停在旧值，进程还是被冻结；同机的 FlClash 一直在跑。FlClash 的差异是 VPN（容器把它映射为系统 VPN，天然豁免）+ 申请了电池优化豁免 + 用户给它开了后台活动。VPN 学不了，后两项学了。**App 侧能做的到此基本到头**，剩下要靠用户在鸿蒙「应用启动管理」里给 Animeko 开「允许后台活动」（README 已写）。如果这些都做了还冻结，下一步只能试 `mediaPlayback` 类型 + 静音 `AudioTrack` 的取巧方案，代价是会和播放器抢音频焦点、控制中心可能出现"正在播放"。
+为什么：harmony.4 的截图显示通知出来了但 2 分钟后仍停在旧值，进程还是被冻结；同机的 FlClash 一直在跑。FlClash 的差异是 VPN（容器把它映射为系统 VPN，天然豁免）+ 申请了电池优化豁免 + 用户给它开了后台活动。VPN 学不了，后两项学了。实测这两项也不够，见 0006。
+
+### 0006 静音音轨保活
+
+- 新增 `SilentAudioKeepAlive`：8 kHz 单声道 16-bit 的 1 秒静音 buffer，`AudioTrack.MODE_STATIC` + `setLoopPoints(…, -1)` 无限循环，由音频 HAL 驱动，不占 CPU；`USAGE_MEDIA`，**不申请音频焦点**。`start()` 时打一行环境信息（`Build.MANUFACTURER/BRAND/MODEL/DEVICE`、SDK、`/proc/self/cgroup` 首行），用于从日志识别卓易通。
+- `HttpCacheService` manifest 类型 `dataSync` → `mediaPlayback`（权限 `FOREGROUND_SERVICE_MEDIA_PLAYBACK` 上游已声明），`onStartCommand` 成功后 `silentAudio.start()`，`onDestroy` 停。
+- `HttpCacheServiceController` 去重：同一进程生命周期状态下只发一次 `startForegroundService`，状态变化时允许重试。
+
+为什么：harmony.5 日志证明 dataSync 前台服务 + partial WakeLock + 电池优化豁免全部到位，退后台后仍在几秒内冻结（14:55:44 最后进度 → 14:58:51 回前台后请求以 3m07s 超时失败）。卓易通的宿主只把"正在播放音频"当成保活理由（这是它的主场景）。副作用：鸿蒙控制中心/状态栏可能显示卓易通在播放音频；用户在其他 App 听歌时会有一路静音混入（听不出来）。若还不够，下一步是再挂一个 `PlaybackState.STATE_PLAYING` 的 `MediaSession`，代价是控制中心会出现 Animeko 的媒体卡片。
+
+验证方法：缓存中退后台 2 分钟，锁屏通知的速度数字应持续刷新；日志里应看到 `Silent audio keep-alive started` 且没有 3 分钟的空白。
 
 ## 5. 日常操作
 
