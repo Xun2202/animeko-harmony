@@ -32,6 +32,17 @@
 
 若三种方式都提示「卓易通不支持」而不是出境易的提示，请把弹窗截图发到 Issue，附上鸿蒙版本和卓易通版本。
 
+### 让下载在后台继续（必做）
+
+鸿蒙会在 App 退后台后几秒内冻结进程，前台服务和通知**不足以**阻止，这和 FlClash 之类能一直跑的应用的区别在于系统侧的设置。装好后请做一次：
+
+1. 鸿蒙 设置 → 应用和服务 → **应用启动管理** → 找到 **Animeko**（找不到就找 **卓易通**）→ 关闭「自动管理」→ 勾选「允许自启动」「允许关联启动」「**允许后台活动**」。
+2. 第一次开始缓存时，App 会弹出 Android 的「忽略电池优化」请求，选**允许**。拒绝过的话到卓易通里 Animeko 的应用信息 → 电池 里手动改。
+3. 鸿蒙 设置 → 电池 → 更多电池设置 → 打开「休眠时始终保持网络连接」。
+4. 多任务界面把 Animeko 卡片下拉加锁，避免被自动清理。
+
+缓存进行中通知栏会有「正在缓存 N 个资源」，全部完成后通知自动消失、服务退出。
+
 > 为什么不用官方包名？卓易通安装 APK 时会按包名查自己的应用目录，包名命中但签名与官方不一致的 APK 会被拒绝，
 > 系统随后交给「出境易」处理并提示「暂不支持安装该应用」。`v6.2.0-harmony.1` 就是因此装不上的，从 `harmony.2` 起改为独立包名。
 > 这与 APK 是否为 universal 包无关：华为设备均为 arm64，`arm64-v8a` 包与 universal 包内容一致。
@@ -43,6 +54,7 @@
 | [`0001-android-harden-foreground-service-notification.patch`](./patches/0001-android-harden-foreground-service-notification.patch) | BT 下载前台服务每次都真正调用 `startForeground()`，不再依赖 `activeNotifications` 判断；只影响 **BT 源**缓存；在线源缓存见 0004。详细分析见 [`docs/ANALYSIS.md`](./docs/ANALYSIS.md)。 |
 | [`0002-updater-use-harmony-fork-releases.patch`](./patches/0002-updater-use-harmony-fork-releases.patch) | 版本号为 `x.y.z-harmony.N` 时，应用内更新改查本仓库 GitHub Releases，并按 `(x, y, z, N)` 比较版本；否则官方更新服务器会把它当成 `x.y.z` 的预发布版而推送官方 APK（签名不同无法安装）。 |
 | [`0004-android-foreground-service-for-http-caches.patch`](./patches/0004-android-foreground-service-for-http-caches.patch) | 在线源（HTTP / m3u8）缓存原本在主进程里直接下载，没有任何前台服务和通知，App 一退后台进程就被冻结、下载停摆。新增 `HttpCacheService`：有在线源缓存进行中时在主进程挂一个 `dataSync` 前台服务并显示进度通知（带「暂停全部」），缓存完成后自动退出。与上游 `main` 为 PikPak 做的 `PikPakCacheService` 同一思路。 |
+| [`0005-android-battery-exemption-and-wake-lock.patch`](./patches/0005-android-battery-exemption-and-wake-lock.patch) | 第一次开始在线源缓存时请求「忽略电池优化」（FlClash 等能常驻后台的应用都这么做），`HttpCacheService` 存活期间持有 partial WakeLock。应对鸿蒙在前台服务存在时仍冻结进程的情况。 |
 | [`0003-android-use-harmony-application-id.patch`](./patches/0003-android-use-harmony-application-id.patch) | `applicationId` 改为 `me.him188.ani.harmony`（应用名保持「Animeko」），并同步 `AndroidBuildConfig.APP_APPLICATION_ID`（FileProvider authority 由它拼出）。绕过卓易通对已知包名的签名校验，并允许与官方版共存。 |
 
 补丁按 [`patches/series`](./patches/series) 的顺序套用。

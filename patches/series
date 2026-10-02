@@ -3,3 +3,4 @@
 0002-updater-use-harmony-fork-releases.patch
 0003-android-use-harmony-application-id.patch
 0004-android-foreground-service-for-http-caches.patch
+0005-android-battery-exemption-and-wake-lock.patch

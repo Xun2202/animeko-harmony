@@ -1,0 +1,188 @@
+From 53661d8f129b13e59191b51d6ae2ebf9ef8b3505 Mon Sep 17 00:00:00 2001
+From: Xun2202 <xun2202@users.noreply.github.com>
+Date: Fri, 2 Oct 2026 06:14:42 +0000
+Subject: [PATCH] android: ask for battery optimisation exemption and hold a
+ wake lock while caching
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+A dataSync foreground service got the notification shown on HarmonyOS
+卓易通, but a lock-screen screenshot two minutes after backgrounding
+shows the notification frozen at its last value while FlClash's keeps
+updating: the process was still suspended. FlClash requests
+REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; do the same from
+HttpCacheServiceController the first time a download starts while the
+app is in the foreground (never again once granted), and hold a partial
+wake lock for the lifetime of HttpCacheService. This build is not
+distributed through Play, so the policy lint (BatteryLife) does not apply.
+---
+ app/android/src/default/AndroidManifest.xml   |  1 +
+ .../service/BatteryOptimizationExemption.kt   | 60 +++++++++++++++++++
+ .../torrent/service/HttpCacheService.kt       | 25 ++++++++
+ .../service/HttpCacheServiceController.kt     |  9 ++-
+ 4 files changed, 94 insertions(+), 1 deletion(-)
+ create mode 100644 app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/BatteryOptimizationExemption.kt
+
+diff --git a/app/android/src/default/AndroidManifest.xml b/app/android/src/default/AndroidManifest.xml
+index 8a50aae..731e431 100644
+--- a/app/android/src/default/AndroidManifest.xml
++++ b/app/android/src/default/AndroidManifest.xml
+@@ -27,6 +27,7 @@
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
++    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+     <uses-permission
+             android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+             android:maxSdkVersion="28"
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/BatteryOptimizationExemption.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/BatteryOptimizationExemption.kt
+new file mode 100644
+index 0000000..2b33128
+--- /dev/null
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/BatteryOptimizationExemption.kt
+@@ -0,0 +1,60 @@
++/*
++ * Copyright (C) 2024-2026 OpenAni and contributors.
++ *
++ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
++ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
++ *
++ * https://github.com/open-ani/ani/blob/main/LICENSE
++ */
++
++package me.him188.ani.app.domain.torrent.service
++
++import android.annotation.SuppressLint
++import android.content.ActivityNotFoundException
++import android.content.Context
++import android.content.Intent
++import android.net.Uri
++import android.os.PowerManager
++import android.provider.Settings
++import me.him188.ani.utils.logging.info
++import me.him188.ani.utils.logging.logger
++import me.him188.ani.utils.logging.warn
++import java.util.concurrent.atomic.AtomicBoolean
++
++/**
++ * Asks the system to exempt this app from battery optimisation while a download is running.
++ *
++ * A foreground service alone does not survive Doze: once the screen is off the system suspends
++ * network access for every app that is not on the exemption list, and compatibility layers such
++ * as HarmonyOS 卓易通 freeze the process outright. VPN clients that keep running there (FlClash)
++ * all request this exemption, so the download services do the same. The dialog is shown at most
++ * once per process start, and never once the exemption is granted.
++ */
++internal object BatteryOptimizationExemption {
++    private val logger = logger<BatteryOptimizationExemption>()
++    private val requestedInThisProcess = AtomicBoolean(false)
++
++    fun isGranted(context: Context): Boolean {
++        val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
++        return runCatching { powerManager.isIgnoringBatteryOptimizations(context.packageName) }.getOrDefault(true)
++    }
++
++    // The policy warning concerns Play Store listings; this build is distributed outside the store
++    // and the exemption is what lets its downloads continue in the background.
++    @SuppressLint("BatteryLife")
++    fun requestOnce(context: Context) {
++        if (isGranted(context)) return
++        if (!requestedInThisProcess.compareAndSet(false, true)) return
++        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
++            .setData(Uri.parse("package:${context.packageName}"))
++            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
++        try {
++            context.startActivity(intent)
++            logger.info { "Requested battery optimisation exemption." }
++        } catch (e: ActivityNotFoundException) {
++            logger.warn { "No activity handles ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS: $e" }
++        } catch (e: SecurityException) {
++            logger.warn { "Not allowed to request battery optimisation exemption: $e" }
++        }
++    }
++}
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
+index f38e454..19939e1 100644
+--- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
+@@ -9,8 +9,11 @@
+ 
+ package me.him188.ani.app.domain.torrent.service
+ 
++import android.annotation.SuppressLint
++import android.content.Context
+ import android.content.Intent
+ import android.graphics.drawable.Icon
++import android.os.PowerManager
+ import androidx.lifecycle.LifecycleService
+ import androidx.lifecycle.lifecycleScope
+ import kotlinx.coroutines.flow.Flow
+@@ -48,6 +51,16 @@ class HttpCacheService : LifecycleService(), KoinComponent {
+     private val downloadManager: MediaDownloadManager by inject()
+     private val downloadOperations: DownloadOperations by inject()
+ 
++    /**
++     * Downloading is CPU and network bound, so the CPU must not doze off while this service runs.
++     * Released in [onDestroy]; the service only lives while downloads are in progress, so there is
++     * no separate timeout.
++     */
++    private val wakeLock by lazy {
++        (getSystemService(Context.POWER_SERVICE) as PowerManager)
++            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Animeko:HttpCacheService")
++    }
++
+     private val notification = ServiceNotification(
+         this,
+         notificationId = NOTIFICATION_ID,
+@@ -115,15 +128,27 @@ class HttpCacheService : LifecycleService(), KoinComponent {
+             return START_NOT_STICKY
+         }
+ 
++        acquireWakeLock()
+         isRunning.value = true
+         return START_STICKY
+     }
+ 
+     override fun onDestroy() {
+         isRunning.value = false
++        releaseWakeLock()
+         super.onDestroy()
+     }
+ 
++    @SuppressLint("WakelockTimeout")
++    private fun acquireWakeLock() {
++        runCatching { if (!wakeLock.isHeld) wakeLock.acquire() }
++            .onFailure { logger.info { "Failed to acquire wake lock: $it" } }
++    }
++
++    private fun releaseWakeLock() {
++        runCatching { if (wakeLock.isHeld) wakeLock.release() }
++    }
++
+     private fun pauseAllDownloads() {
+         val ids = downloadManager.downloads.value
+             .filter { it.engineKey.isInProcess() }
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
+index 754e07e..9062d87 100644
+--- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
+@@ -61,7 +61,14 @@ class HttpCacheServiceController(
+                         return@onEach
+                     }
+                     when {
+-                        shouldRun && !serviceRunning -> startService()
++                        shouldRun && !serviceRunning -> {
++                            startService()
++                            // Only while the user is looking at the app: the system dialog would be
++                            // swallowed (or counted as a background activity start) otherwise.
++                            if (processState.isAtLeast(Lifecycle.State.RESUMED)) {
++                                BatteryOptimizationExemption.requestOnce(context)
++                            }
++                        }
+                         !shouldRun && serviceRunning -> stopService()
+                     }
+                 }
+-- 
+2.43.0
+

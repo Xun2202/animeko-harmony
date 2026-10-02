@@ -35,6 +35,7 @@ patches/
   0002-updater-use-harmony-fork-releases.patch
   0003-android-use-harmony-application-id.patch
   0004-android-foreground-service-for-http-caches.patch
+  0005-android-battery-exemption-and-wake-lock.patch
 scripts/prepare-source.sh                  # 套补丁 + 改更新器仓库名 + 改版本号, workflow 和本地都用它
 .github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release
 .github/workflows/check_patches.yml        # 补丁能否套到上游最新稳定版 / main
@@ -81,6 +82,14 @@ rebase 时留意：上游如果把 `applicationId` 挪到 `gradle.properties` �
 为什么必须有这个补丁：在线源缓存由 `KtorHttpDownloader` 在主进程下载，上游没有为它做前台服务（BT 服务在 `:torrent_service` 进程，保护不到主进程）。真机日志（6.2.0-harmony.3）显示：12:35:49 退后台后所有分片请求瞬间停止，12:57:38 回到前台才以 `Socket timeout` 失败并重试——整整 22 分钟进程被冻结。这也是用户反馈「没有通知、流量归零」的真正原因；补丁 0001 针对的 BT 路径在那次测试里根本没走到。
 
 rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheService`（过滤 `engineKey == PikPak`），并且 `ServiceNotification` 的重构与本补丁相同。下个稳定版 rebase 时：`ServiceNotification` 部分直接丢弃（上游已有）；`HttpCacheService` 的 `isInProcess()` 要改成 `!= Anitorrent && != PikPak`，避免两个服务同时为 PikPak 缓存挂通知。更干净的做法是把上游 `PikPakCacheService` 泛化成覆盖全部进程内引擎，然后给上游提 PR。
+
+### 0005 电池优化豁免 + WakeLock
+
+- 新增 `BatteryOptimizationExemption`：`isGranted()` 查 `PowerManager.isIgnoringBatteryOptimizations`；`requestOnce()` 发 `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`，每个进程生命周期最多弹一次，已授权不弹。`HttpCacheServiceController` 在拉起服务且进程处于 RESUMED 时调用。
+- `HttpCacheService` 在 `startForeground` 成功后持有 `PARTIAL_WAKE_LOCK`，`onDestroy` 释放。
+- manifest 增加 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`。
+
+为什么：harmony.4 的截图显示通知出来了但 2 分钟后仍停在旧值，进程还是被冻结；同机的 FlClash 一直在跑。FlClash 的差异是 VPN（容器把它映射为系统 VPN，天然豁免）+ 申请了电池优化豁免 + 用户给它开了后台活动。VPN 学不了，后两项学了。**App 侧能做的到此基本到头**，剩下要靠用户在鸿蒙「应用启动管理」里给 Animeko 开「允许后台活动」（README 已写）。如果这些都做了还冻结，下一步只能试 `mediaPlayback` 类型 + 静音 `AudioTrack` 的取巧方案，代价是会和播放器抢音频焦点、控制中心可能出现"正在播放"。
 
 ## 5. 日常操作
 
