@@ -18,7 +18,7 @@
 | 项目 | 内容 |
 | --- | --- |
 | 仓库形态 | 不是源码 fork。只有 `patches/`、`scripts/`、workflow 和文档；源码在 Actions 运行时从官方 tag 拉取 |
-| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布：`v6.2.0-harmony.1`（官方包名，装不上，已标为 prerelease 并加警告）、`v6.2.0-harmony.2`（应用名曾改为 Animeko Harmony）、`v6.2.0-harmony.3`（2026-10-01，当前可用） |
+| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布：`v6.2.0-harmony.1`（官方包名，装不上，已标为 prerelease 并加警告）、`v6.2.0-harmony.2`（应用名曾改为 Animeko Harmony）、`v6.2.0-harmony.3`（独立包名，可装，但在线源缓存退后台会停）、`v6.2.0-harmony.4`（2026-10-02，当前可用） |
 | 包名 | `me.him188.ani.harmony`（补丁 0003），桌面名称仍为「Animeko」→ 与官方版 `me.him188.ani` 共存。`harmony.1` 曾用官方包名，被卓易通以签名不匹配拒装 |
 | versionCode | 沿用上游固定值 `android.version.code`（上游刻意不变，方便回退），harmony 版本之间可任意覆盖 |
 | 构建 | `.github/workflows/harmony_release.yml`，ubuntu-24.04，Temurin JDK 21，`assembleDefaultRelease`，只编 `arm64-v8a` |
