@@ -127,7 +127,7 @@ Actions → **Harmony Release** → Run workflow：
 | `KEY_PASSWORD` | key 密码 | 是 |
 | `DANDANPLAY_APP_ID` / `DANDANPLAY_APP_SECRET` | 弹弹play 开放平台密钥，不填则该弹幕源不可用 | 否 |
 
-与 `mihon-harmony` 同名但**不是**同一个密钥：本仓库使用独立的 keystore（RSA 4096，alias `xun2202-animeko-harmony`，有效期至 2056-09-30，证书 SHA-256 `50907c1de76a92991797ed8c5c1feb5df56e180634738b538bddc81735dda10b`）。keystore 文件和全部 Secret 的值备份在私有仓库 `Xun2202/animeko-harmony-keystore`，格式与 `mihon-repo-keystore` 相同。**签名密钥一旦更换，用户就必须卸载重装**，不要丢。
+与 `mihon-harmony` 同名但**不是**同一个密钥：本仓库使用独立的 keystore（RSA 4096，alias `xun2202-animeko-harmony`，有效期至 2056-09-30，证书 SHA-256 `50907c1de76a92991797ed8c5c1feb5df56e180634738b538bddc81735dda10b`）。keystore 文件和全部 Secret 的值备份在私有仓库 `Xun2202/keystores` 的 `animeko-harmony/` 目录（统一存放全部签名密钥，附 `scripts/verify.py` 与 `scripts/set_secrets.py`；旧仓库 `animeko-harmony-keystore` 已于 2026-10-05 归档）。**签名密钥一旦更换，用户就必须卸载重装**，不要丢。
 
 Animeko 的 Gradle 通过环境变量读取签名参数（`build-logic/src/main/kotlin/properties.kt` 的 `aniProperty()` 顺序：local.properties → 系统属性 → 环境变量 → Gradle property）：
 `signing_release_storeFileFromRoot`（相对仓库根的 keystore 路径）、`signing_release_storePassword`、`signing_release_keyAlias`、`signing_release_keyPassword`。没有这些变量时输出未签名 APK，不报错——所以 workflow 前面有一步显式校验 Secrets 非空。
