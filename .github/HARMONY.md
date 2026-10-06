@@ -18,7 +18,7 @@
 | 项目 | 内容 |
 | --- | --- |
 | 仓库形态 | 不是源码 fork。只有 `patches/`、`scripts/`、workflow 和文档；源码在 Actions 运行时从官方 tag 拉取 |
-| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布：`v6.2.0-harmony.1`（官方包名，装不上，已标为 prerelease 并加警告）、`v6.2.0-harmony.2`（应用名曾改为 Animeko Harmony）、`v6.2.0-harmony.3`（独立包名，可装，但在线源缓存退后台会停）、`v6.2.0-harmony.4`（在线源缓存有前台服务，但仍被冻结）、`v6.2.0-harmony.5`（加电池豁免 + WakeLock，仍被冻结）、`v6.2.0-harmony.6`（2026-10-02，静音音轨保活，当前可用） |
+| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布：`v6.2.0-harmony.1`（官方包名，装不上，已标为 prerelease 并加警告）、`v6.2.0-harmony.2`（应用名曾改为 Animeko Harmony）、`v6.2.0-harmony.3`（独立包名，可装，但在线源缓存退后台会停）、`v6.2.0-harmony.4`（在线源缓存有前台服务，但仍被冻结）、`v6.2.0-harmony.5`（加电池豁免 + WakeLock，仍被冻结）、`v6.2.0-harmony.6`（2026-10-02，静音音轨保活；2026-10-06 用户真机确认有效）、`v6.2.0-harmony.7`（2026-10-06，下载通知加进度 + 当前项，与 Mihon / Anikku 鸿蒙版统一） |
 | 包名 | `me.him188.ani.harmony`（补丁 0003），桌面名称仍为「Animeko」→ 与官方版 `me.him188.ani` 共存。`harmony.1` 曾用官方包名，被卓易通以签名不匹配拒装 |
 | versionCode | 沿用上游固定值 `android.version.code`（上游刻意不变，方便回退），harmony 版本之间可任意覆盖 |
 | 构建 | `.github/workflows/harmony_release.yml`，ubuntu-24.04，Temurin JDK 21，`assembleDefaultRelease`，只编 `arm64-v8a` |
@@ -37,6 +37,7 @@ patches/
   0004-android-foreground-service-for-http-caches.patch
   0005-android-battery-exemption-and-wake-lock.patch
   0006-android-silent-audio-keep-alive.patch
+  0007-android-download-notification-progress.patch
 scripts/prepare-source.sh                  # 套补丁 + 改更新器仓库名 + 改版本号, workflow 和本地都用它
 .github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release
 .github/workflows/check_patches.yml        # 补丁能否套到上游最新稳定版 / main
@@ -101,6 +102,19 @@ rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheServi
 为什么：harmony.5 日志证明 dataSync 前台服务 + partial WakeLock + 电池优化豁免全部到位，退后台后仍在几秒内冻结（14:55:44 最后进度 → 14:58:51 回前台后请求以 3m07s 超时失败）。卓易通的宿主只把"正在播放音频"当成保活理由（这是它的主场景）。副作用：鸿蒙控制中心/状态栏可能显示卓易通在播放音频；用户在其他 App 听歌时会有一路静音混入（听不出来）。若还不够，下一步是再挂一个 `PlaybackState.STATE_PLAYING` 的 `MediaSession`，代价是控制中心会出现 Animeko 的媒体卡片。
 
 验证方法：缓存中退后台 2 分钟，锁屏通知的速度数字应持续刷新；日志里应看到 `Silent audio keep-alive started` 且没有 3 分钟的空白。
+结果：2026-10-06 用户真机确认 harmony.6 的保活有效；Mihon / Anikku 鸿蒙版（mihon-harmony 0005、anikku-harmony 0009）随后采用同一做法。
+
+### 0007 下载通知加进度（`app/shared/app-data/.../torrent/service/`）
+
+- `NotificationDisplayStrategy.Working` 新增 `progress: Int?`（0–100）和 `detail: String?`，默认 `null` 时通知与 0006 之前完全一样。
+- `ServiceNotification.buildNotification()`：先按 `appearance.content` 格式化出速度文本，有 `progress` 时追加「 · N%」并 `setProgress(100, N, false)`；
+  有 `detail` 时 `BigTextStyle` 展开显示「<正文>\n<detail>」。
+- `HttpCacheService`：`HttpDownloadActivity` 新增 `progress`（活动任务按 `totalSize` 加权汇总 `DownloadSnapshot.progress`，有任务大小未知则取平均，都没报进度则 `null`）
+  和 `currentItem`（第一个活动任务的「`subjectNameCN`（或首个名称）- `episodeSort episodeName`」）。
+- `AniTorrentService`：`stats.totalSize > 0` 时传 `(downloadProgress × 100)`。
+
+目的：与 mihon-harmony 0006 / anikku-harmony 0010 定稿的统一通知格式一致——标题「正在<动词> N 个<单位>」、正文「下载：<速度>/s · <进度>%」、确定型进度条、展开显示当前项（见归档仓 `docs/卓易通问题矩阵.md` 第 2 节）。
+不改字符串资源；rebase 时若上游重写 `ServiceNotification`，照上述四点重做。
 
 ## 5. 日常操作
 
@@ -158,6 +172,7 @@ Animeko 的 Gradle 通过环境变量读取签名参数（`build-logic/src/main/
 | App 提示更新到官方版本 | 说明运行的不是 harmony 版本号（补丁 0002 没套上或 `version.name` 没改），看 prepare-source.sh 的输出 |
 | 鸿蒙提示「出境易暂不支持安装该应用」 | 卓易通拒装了：包名在其目录里但签名不匹配。确认 APK 的包名是 `me.him188.ani.harmony`（`aapt2 dump badging x.apk \| head -1`，补丁 0003 是否套上）。若上游重构后包名又变回 `me.him188.ani`，就会复现 |
 | 分享日志 / 应用内更新安装时崩溃 `Couldn't find meta-data for provider with authority` | `APP_APPLICATION_ID` 与 manifest 的 `${applicationId}` 不一致，检查补丁 0003 两处是否都套上 |
+| 在线源缓存通知只有速度、没有百分比 | 所有活动任务的 `DownloadSnapshot.progress` 都是 `Unspecified`（例如长度未知的 HLS 流），0007 按设计不显示进度；只要有一个任务报进度就会出现百分比 |
 
 ## 8. 已知限制与后续方向
 

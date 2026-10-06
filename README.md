@@ -34,7 +34,7 @@
 
 ### 让下载在后台继续（必做）
 
-鸿蒙会在 App 退后台后几秒内冻结进程，前台服务和通知**不足以**阻止。从 `harmony.6` 起 App 在缓存期间会播放一段静音音轨来保活（卓易通只对音频播放网开一面）；系统侧的设置仍建议做一次：
+鸿蒙会在 App 退后台后几秒内冻结进程，前台服务和通知**不足以**阻止。从 `harmony.6` 起 App 在缓存期间会播放一段静音音轨来保活（卓易通只对音频播放网开一面；2026-10-06 用户真机确认有效，Mihon / Anikku 的鸿蒙版随后采用同一做法）；系统侧的设置仍建议做一次：
 
 1. 鸿蒙 设置 → 应用和服务 → **应用启动管理** → 找到 **Animeko**（找不到就找 **卓易通**）→ 关闭「自动管理」→ 勾选「允许自启动」「允许关联启动」「**允许后台活动**」。
 2. 第一次开始缓存时，App 会弹出 Android 的「忽略电池优化」请求，选**允许**。拒绝过的话到卓易通里 Animeko 的应用信息 → 电池 里手动改。
@@ -57,6 +57,7 @@
 | [`0005-android-battery-exemption-and-wake-lock.patch`](./patches/0005-android-battery-exemption-and-wake-lock.patch) | 第一次开始在线源缓存时请求「忽略电池优化」（FlClash 等能常驻后台的应用都这么做），`HttpCacheService` 存活期间持有 partial WakeLock。应对鸿蒙在前台服务存在时仍冻结进程的情况。 |
 | [`0006-android-silent-audio-keep-alive.patch`](./patches/0006-android-silent-audio-keep-alive.patch) | `HttpCacheService` 改为 `mediaPlayback` 类型，存活期间循环播放一段静音音轨（不申请音频焦点，不影响其他 App 放音）。实测卓易通对 dataSync 前台服务 + WakeLock + 电池豁免仍在退后台几秒内冻结进程，只有音频播放会被宿主保活。 |
 | [`0003-android-use-harmony-application-id.patch`](./patches/0003-android-use-harmony-application-id.patch) | `applicationId` 改为 `me.him188.ani.harmony`（应用名保持「Animeko」），并同步 `AndroidBuildConfig.APP_APPLICATION_ID`（FileProvider authority 由它拼出）。绕过卓易通对已知包名的签名校验，并允许与官方版共存。 |
+| [`0007-android-download-notification-progress.patch`](./patches/0007-android-download-notification-progress.patch) | 两个下载前台服务的通知与 Mihon / Anikku 鸿蒙版统一：正文在速度后追加「 · N%」并显示确定型进度条（在线源缓存按文件大小加权汇总各任务进度，大小未知时取平均；BT 用 `TorrentDownloader.Stats.downloadProgress`），在线源缓存通知下拉展开还显示正在缓存的「番剧 - 集」。`NotificationDisplayStrategy.Working` 新增可选的 `progress` / `detail`，不改任何字符串。 |
 
 补丁按 [`patches/series`](./patches/series) 的顺序套用。
 
@@ -79,7 +80,7 @@
 
 ## Secrets
 
-已配置完成，[`v6.2.0-harmony.6`](../../releases/tag/v6.2.0-harmony.6) 等版本均由流水线自动产出。签名密钥备份在私有仓库 `Xun2202/keystores` 的 `animeko-harmony/` 目录（含各 Secret 的值、校验与一键恢复脚本；旧仓库 `animeko-harmony-keystore` 已归档）。仓库 Settings → Secrets and variables → Actions 中的条目：
+已配置完成，[`v6.2.0-harmony.6`](../../releases/tag/v6.2.0-harmony.6)、[`v6.2.0-harmony.7`](../../releases/tag/v6.2.0-harmony.7) 等版本均由流水线自动产出。签名密钥备份在私有仓库 `Xun2202/keystores` 的 `animeko-harmony/` 目录（含各 Secret 的值、校验与一键恢复脚本；旧仓库 `animeko-harmony-keystore` 已归档）。仓库 Settings → Secrets and variables → Actions 中的条目：
 
    | Secret | 内容 |
    | --- | --- |
