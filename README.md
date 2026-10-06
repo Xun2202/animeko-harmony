@@ -14,6 +14,9 @@
 - 到 [Releases](../../releases) 下载最新的 `ani-<版本>-arm64-v8a.apk`（华为设备均为 arm64）。
 - 包名为 `me.him188.ani.harmony`，桌面名称仍是「Animeko」，与官方版（`me.him188.ani`）是两个独立应用，**可以共存、互不覆盖**（同时安装时桌面会有两个「Animeko」图标），账号和下载数据需要分别设置。
 - 应用内「检查更新」已改为检查本仓库的 Release，不会再提示安装官方 APK。
+  手动更新：设置 → 软件更新 → 「检查更新」，有新版本时按钮变成「有新版本: x.y.z-harmony.N」，页面底部同时弹出「新版本 …」横条，点「查看」→「**立即更新**」即在应用内下载，下载完点「重启更新」交给系统安装器（按钮文案是上游桌面端的叫法，Android 上就是安装）。
+  harmony.7 及之前关闭「自动检查更新」后这个按钮是失效的（上游把手动检查也挂在了同一个开关下），而且弹窗里的更新说明不能滚动、会把按钮挤出屏幕，harmony.8 起已修复；装不上新版时也可以直接从 Releases 下载 APK 覆盖安装。
+  装完后残留在缓存里的安装包会在下次启动时自动删除（harmony.8 起）。
 - 若同时装了官方版，点击 `ani://` 链接（扫码登录、分享链接等）时系统会弹出选择框，两个都叫 Animeko，不想纠结的话卸载官方版即可。
 
 ### 安装步骤（鸿蒙 NEXT / 6 / 7）
@@ -58,6 +61,7 @@
 | [`0006-android-silent-audio-keep-alive.patch`](./patches/0006-android-silent-audio-keep-alive.patch) | `HttpCacheService` 改为 `mediaPlayback` 类型，存活期间循环播放一段静音音轨（不申请音频焦点，不影响其他 App 放音）。实测卓易通对 dataSync 前台服务 + WakeLock + 电池豁免仍在退后台几秒内冻结进程，只有音频播放会被宿主保活。 |
 | [`0003-android-use-harmony-application-id.patch`](./patches/0003-android-use-harmony-application-id.patch) | `applicationId` 改为 `me.him188.ani.harmony`（应用名保持「Animeko」），并同步 `AndroidBuildConfig.APP_APPLICATION_ID`（FileProvider authority 由它拼出）。绕过卓易通对已知包名的签名校验，并允许与官方版共存。 |
 | [`0007-android-download-notification-progress.patch`](./patches/0007-android-download-notification-progress.patch) | 两个下载前台服务的通知与 Mihon / Anikku 鸿蒙版统一：正文在速度后追加「 · N%」并显示确定型进度条（在线源缓存按文件大小加权汇总各任务进度，大小未知时取平均；BT 用 `TorrentDownloader.Stats.downloadProgress`），在线源缓存通知下拉展开还显示正在缓存的「番剧 - 集」。`NotificationDisplayStrategy.Working` 新增可选的 `progress` / `detail`，不改任何字符串。 |
+| [`0008-update-manual-check-and-popup-fixes.patch`](./patches/0008-update-manual-check-and-popup-fixes.patch) | 修复应用内更新的四个问题：① 设置页「检查更新」与自动检查走同一个 `autoCheckUpdate` 判断，关闭「自动检查更新」后手动点也没反应，现在只有自动检查受开关控制，手动检查没有新版本时显示「已是最新」；② `NewVersionPopupCard` 的更新说明是对话框里一个不能滚动的 `Column`，说明一长（本仓库 Release 正文开头是补丁清单）就把「查看详情 / 立即更新」挤出屏幕，现在限高 280dp 内滚动；③ `HarmonyForkUpdates` 只取 Release 正文「## 本次变更」一节作为更新说明（内容来自 [`patches/CHANGELOG.md`](./patches/CHANGELOG.md)，由 `harmony_release.yml` 写进正文），没有该节的旧 Release 回退到整段正文；④ 「应用内下载」开关不再随「自动检查更新」一起变灰，弹窗按钮「自动更新」改为「立即更新」（en: Update now），设置页「查看更新日志」对 harmony 版本指向本仓库 Release 页。另外 Android 启动时调用上游已有的 `UpdateManager.deleteInstalledFiles()`（此前只有桌面端调用），删除已安装完成的安装包。 |
 
 补丁按 [`patches/series`](./patches/series) 的顺序套用。
 
@@ -74,13 +78,13 @@
 2. `git clone --depth 1 --branch <tag>` 官方源码（Android 端的 anitorrent 原生库来自 Maven，无需 boost 子模块）。
 3. [`scripts/prepare-source.sh`](./scripts/prepare-source.sh)：按 `series` 顺序 `git apply --3way` 补丁、把更新器指向当前仓库、改写 `gradle.properties` 的 `version.name` / `package.version`，每一步各提交一次。
 4. Temurin JDK 21 + `./gradlew assembleDefaultRelease`（`ani.android.abis=arm64-v8a`），签名密钥来自仓库 Secrets。
-5. 产物重命名为 `ani-<版本>-arm64-v8a.apk`，附 `.sha1`，上传为 Actions artifact 并 `gh release create`。
+5. 产物重命名为 `ani-<版本>-arm64-v8a.apk`，附 `.sha1`，上传为 Actions artifact 并 `gh release create`。Release 正文的「本次变更」取自 [`patches/CHANGELOG.md`](./patches/CHANGELOG.md) 里 `## harmony.<N>` 小节（应用内更新弹窗只显示这一节），**发版前先在那里补一节**。
 
 [`.github/workflows/check_patches.yml`](./.github/workflows/check_patches.yml) 在补丁改动时和每周一，把补丁分别试套到官方最新稳定版和 `main`，上游一变就能提前知道要 rebase。
 
 ## Secrets
 
-已配置完成，[`v6.2.0-harmony.6`](../../releases/tag/v6.2.0-harmony.6)、[`v6.2.0-harmony.7`](../../releases/tag/v6.2.0-harmony.7) 等版本均由流水线自动产出。签名密钥备份在私有仓库 `Xun2202/keystores` 的 `animeko-harmony/` 目录（含各 Secret 的值、校验与一键恢复脚本；旧仓库 `animeko-harmony-keystore` 已归档）。仓库 Settings → Secrets and variables → Actions 中的条目：
+已配置完成，[`v6.2.0-harmony.7`](../../releases/tag/v6.2.0-harmony.7)、[`v6.2.0-harmony.8`](../../releases/tag/v6.2.0-harmony.8) 等版本均由流水线自动产出。签名密钥备份在私有仓库 `Xun2202/keystores` 的 `animeko-harmony/` 目录（含各 Secret 的值、校验与一键恢复脚本；旧仓库 `animeko-harmony-keystore` 已归档）。仓库 Settings → Secrets and variables → Actions 中的条目：
 
    | Secret | 内容 |
    | --- | --- |

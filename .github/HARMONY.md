@@ -18,13 +18,13 @@
 | 项目 | 内容 |
 | --- | --- |
 | 仓库形态 | 不是源码 fork。只有 `patches/`、`scripts/`、workflow 和文档；源码在 Actions 运行时从官方 tag 拉取 |
-| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布：`v6.2.0-harmony.1`（官方包名，装不上，已标为 prerelease 并加警告）、`v6.2.0-harmony.2`（应用名曾改为 Animeko Harmony）、`v6.2.0-harmony.3`（独立包名，可装，但在线源缓存退后台会停）、`v6.2.0-harmony.4`（在线源缓存有前台服务，但仍被冻结）、`v6.2.0-harmony.5`（加电池豁免 + WakeLock，仍被冻结）、`v6.2.0-harmony.6`（2026-10-02，静音音轨保活；2026-10-06 用户真机确认有效）、`v6.2.0-harmony.7`（2026-10-06，下载通知加进度 + 当前项，与 Mihon / Anikku 鸿蒙版统一） |
+| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布：`v6.2.0-harmony.1`（官方包名，装不上，已标为 prerelease 并加警告）、`v6.2.0-harmony.2`（应用名曾改为 Animeko Harmony）、`v6.2.0-harmony.3`（独立包名，可装，但在线源缓存退后台会停）、`v6.2.0-harmony.4`（在线源缓存有前台服务，但仍被冻结）、`v6.2.0-harmony.5`（加电池豁免 + WakeLock，仍被冻结）、`v6.2.0-harmony.6`（2026-10-02，静音音轨保活；2026-10-06 用户真机确认有效）、`v6.2.0-harmony.7`（2026-10-06，下载通知加进度 + 当前项，与 Mihon / Anikku 鸿蒙版统一）、`v6.2.0-harmony.8`（2026-10-06，应用内更新：关自动检查后仍可手动检查、弹窗可滚动、只显示「本次变更」、启动删已装安装包） |
 | 包名 | `me.him188.ani.harmony`（补丁 0003），桌面名称仍为「Animeko」→ 与官方版 `me.him188.ani` 共存。`harmony.1` 曾用官方包名，被卓易通以签名不匹配拒装 |
 | versionCode | 沿用上游固定值 `android.version.code`（上游刻意不变，方便回退），harmony 版本之间可任意覆盖 |
 | 构建 | `.github/workflows/harmony_release.yml`，ubuntu-24.04，Temurin JDK 21，`assembleDefaultRelease`，只编 `arm64-v8a` |
 | 触发 | 每天 UTC 03:23 定时 + 手动 `workflow_dispatch` |
 | 补丁健康检查 | `.github/workflows/check_patches.yml`：补丁改动时 + 每周一，试套官方最新稳定版（必须成功）和 `main`（只警告） |
-| 应用内更新 | 补丁 0002 把更新源改为本仓库 Releases |
+| 应用内更新 | 补丁 0002 把更新源改为本仓库 Releases；0008 修手动检查 / 弹窗 / 更新说明来源（`patches/CHANGELOG.md` → Release 正文「本次变更」） |
 
 ## 3. 目录结构
 
@@ -38,6 +38,8 @@ patches/
   0005-android-battery-exemption-and-wake-lock.patch
   0006-android-silent-audio-keep-alive.patch
   0007-android-download-notification-progress.patch
+  0008-update-manual-check-and-popup-fixes.patch
+  CHANGELOG.md                             # 每个 harmony.N 一节, 发版时写进 Release 正文「本次变更」, 应用内更新弹窗只显示这一节
 scripts/prepare-source.sh                  # 套补丁 + 改更新器仓库名 + 改版本号, workflow 和本地都用它
 .github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release
 .github/workflows/check_patches.yml        # 补丁能否套到上游最新稳定版 / main
@@ -116,6 +118,17 @@ rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheServi
 目的：与 mihon-harmony 0006 / anikku-harmony 0010 定稿的统一通知格式一致——标题「正在<动词> N 个<单位>」、正文「下载：<速度>/s · <进度>%」、确定型进度条、展开显示当前项（见归档仓 `docs/卓易通问题矩阵.md` 第 2 节）。
 不改字符串资源；rebase 时若上游重写 `ServiceNotification`，照上述四点重做。
 
+### 0008 应用内更新修复（`app/shared/ui-settings/.../ui/update/`、`.../settings/tabs/app/AppSettingsTab.kt`、`app/android/.../AniApplication.kt`、`app-lang` 四个 strings.xml）
+
+- `AppUpdateViewModel.startCheckLatestVersion(uriHandler, automatic = false)`：新增 `automatic` 参数，只有自动检查（`startAutomaticCheckLatestVersion()`）在 `autoCheckUpdate` 关闭时跳过，且跳过时不再更新 `lastCheckTime`；设置页按钮、`MainScreen` 的版本过期强制检查都是手动语义。
+- `AppSettingsTab.SoftwareUpdateGroup`：按钮文案新增 `AlreadyUpToDate → settings_update_up_to_date`；「应用内下载」开关去掉 `enabled = autoCheckUpdate`；「查看更新日志」对 `HarmonyForkVersion.parse()` 成功的版本用 `harmonyForkReleasePageUrl()`。
+- `NewVersionDialog.NewVersionPopupCard`：更新说明 `Column` 加 `heightIn(max = 280.dp).verticalScroll(...)`。`BasicAlertDialog` 不会自己滚动，内容超高只会被裁掉。
+- `HarmonyForkUpdates.kt`：新增 `harmonyForkChangelog(body)`，取 `## 本次变更`（任意级别标题）到下一个标题之间的文本；`getHarmonyForkLatestVersion()` 的 `changelogs` 只收有该节的 Release，一个都没有时回退为最新 Release 的整段正文。`NewVersion.majorChanges` 仍取前 4 行。
+- `AniApplication.onCreate`：`startKoin` 之后 `scope.launch(Dispatchers.IO_) { koin.get<UpdateManager>().deleteInstalledFiles() }`，与 `AniDesktop.kt` 同一调用；文件名含当前 `versionName` 的安装包会被删（harmony.1 与 harmony.10 的包含关系是上游逻辑的已知边角，忽略）。
+- 字符串：`settings_update_popup_auto_update` 四个语言由「自动更新 / Auto-update」改为「立即更新 / Update now」。`values-zh`、`values-zh-rSG`、`values-zh-rMO` 由 Gradle 任务从 rCN / rHK 复制，不在仓库里。
+
+配套：`harmony_release.yml` 的「Write release notes」步骤用 `awk` 从 `patches/CHANGELOG.md` 取 `## harmony.$PATCH_NUMBER` 小节写成「## 本次变更」（找不到则写「- 见下方补丁列表。」），放在补丁清单之前。**每次发版前先在 CHANGELOG.md 补一节**，否则弹窗里只会看到那句兜底文案。
+
 ## 5. 日常操作
 
 ### 5.1 手动出新版
@@ -124,6 +137,7 @@ Actions → **Harmony Release** → Run workflow：
 
 - `upstream_tag`：官方 tag，如 `v6.3.0`；留空取最新稳定版。只接受 `vX.Y.Z`，不支持 alpha/beta。
 - `patch_number`：同一官方版本第几次打包，从 `1` 开始。改了补丁想重编就填 `2`、`3`……
+- 发版前在 `patches/CHANGELOG.md` 加 `## harmony.<N>` 小节（给用户看的要点，每行 `- ` 开头），它会成为 Release 正文和应用内更新弹窗的「本次变更」。
 
 同名 Release 已存在会直接跳过；要重编必须换补丁号或先删旧 Release。整个流程约 15 分钟（首个版本 `v6.2.0-harmony.1` 实测 14 分钟；Animeko 编译很重，参数照搬上游 CI 的 8g 堆 + 10g swap）。
 
@@ -173,6 +187,9 @@ Animeko 的 Gradle 通过环境变量读取签名参数（`build-logic/src/main/
 | 鸿蒙提示「出境易暂不支持安装该应用」 | 卓易通拒装了：包名在其目录里但签名不匹配。确认 APK 的包名是 `me.him188.ani.harmony`（`aapt2 dump badging x.apk \| head -1`，补丁 0003 是否套上）。若上游重构后包名又变回 `me.him188.ani`，就会复现 |
 | 分享日志 / 应用内更新安装时崩溃 `Couldn't find meta-data for provider with authority` | `APP_APPLICATION_ID` 与 manifest 的 `${applicationId}` 不一致，检查补丁 0003 两处是否都套上 |
 | 在线源缓存通知只有速度、没有百分比 | 所有活动任务的 `DownloadSnapshot.progress` 都是 `Unspecified`（例如长度未知的 HLS 流），0007 按设计不显示进度；只要有一个任务报进度就会出现百分比 |
+| 关了「自动检查更新」后点「检查更新」只闪一下、没反应 | harmony.7 及之前的上游行为（手动检查也受该开关控制）。升级到 harmony.8；或先打开自动检查再点 |
+| 新版本弹窗里按钮看不到 / 被挤出屏幕 | harmony.7 及之前更新说明不可滚动且显示的是整段 Release 正文。升级到 harmony.8；临时办法是直接去 Releases 页下载 APK 覆盖安装 |
+| 更新弹窗只显示「见下方补丁列表。」 | 发版前没在 `patches/CHANGELOG.md` 补 `## harmony.<N>` 小节。补上后下次发版生效；已发布的 Release 可用 `gh release edit --notes-file` 改正文，App 下次检查就会读到 |
 
 ## 8. 已知限制与后续方向
 
