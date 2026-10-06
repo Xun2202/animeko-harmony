@@ -209,10 +209,25 @@ jobs:
         env:
           UPSTREAM_TAG: ${{ steps.version.outputs.upstream_tag }}
           HARMONY_VERSION: ${{ steps.version.outputs.harmony_version }}
+          PATCH_NUMBER: ${{ steps.version.outputs.patch_number }}
         run: |
           set -euo pipefail
+          # 「本次变更」取自 patches/CHANGELOG.md 中 "## harmony.N" 小节 (到下一个标题为止).
+          # 应用内更新 (补丁 0008 起) 只把这一节当作更新说明显示, 所以它必须排在补丁清单之前.
+          changes="$(awk -v h="## harmony.$PATCH_NUMBER" '
+            $0 == h { on = 1; next }
+            on && /^#/ { exit }
+            on { print }
+          ' patches/CHANGELOG.md | sed -e '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')"
+          if [[ -z "$changes" ]]; then
+            changes="- 见下方补丁列表。"
+          fi
           {
             echo "基于 [Animeko $UPSTREAM_TAG](https://github.com/$UPSTREAM_REPO/releases/tag/$UPSTREAM_TAG) 的非官方 HarmonyOS / 卓易通 兼容构建。"
+            echo
+            echo "## 本次变更"
+            echo
+            echo "$changes"
             echo
             echo "## 本构建包含的补丁"
             echo
