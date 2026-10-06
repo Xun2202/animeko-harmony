@@ -1,9 +1,9 @@
 {
-  "url": "https://api.github.com/repos/Xun2202/animeko-harmony/releases/404957212",
-  "assets_url": "https://api.github.com/repos/Xun2202/animeko-harmony/releases/404957212/assets",
-  "upload_url": "https://uploads.github.com/repos/Xun2202/animeko-harmony/releases/404957212/assets{?name,label}",
-  "html_url": "https://github.com/Xun2202/animeko-harmony/releases/tag/v6.2.0-harmony.8",
-  "id": 404957212,
+  "url": "https://api.github.com/repos/Xun2202/animeko-harmony/releases/405033400",
+  "assets_url": "https://api.github.com/repos/Xun2202/animeko-harmony/releases/405033400/assets",
+  "upload_url": "https://uploads.github.com/repos/Xun2202/animeko-harmony/releases/405033400/assets{?name,label}",
+  "html_url": "https://github.com/Xun2202/animeko-harmony/releases/tag/v6.2.0-harmony.9",
+  "id": 405033400,
   "author": {
     "login": "github-actions[bot]",
     "id": 41898282,
@@ -25,22 +25,22 @@
     "user_view_type": "public",
     "site_admin": false
   },
-  "node_id": "RE_kwDOU1vGq84YIygc",
-  "tag_name": "v6.2.0-harmony.8",
-  "target_commitish": "0abca223254aa2ed54b23eb6c1782ce843db8cfc",
-  "name": "Animeko Harmony 6.2.0-harmony.8",
+  "node_id": "RE_kwDOU1vGq84YJFG4",
+  "tag_name": "v6.2.0-harmony.9",
+  "target_commitish": "75954844b0079a984974c1b9204ead794acaecf0",
+  "name": "Animeko Harmony 6.2.0-harmony.9",
   "draft": false,
   "immutable": false,
   "prerelease": false,
-  "created_at": "2026-10-06T16:50:37Z",
-  "updated_at": "2026-10-06T16:58:50Z",
-  "published_at": "2026-10-06T16:58:50Z",
+  "created_at": "2026-10-06T18:30:58Z",
+  "updated_at": "2026-10-06T18:39:31Z",
+  "published_at": "2026-10-06T18:39:31Z",
   "assets": [
     {
-      "url": "https://api.github.com/repos/Xun2202/animeko-harmony/releases/assets/616112098",
-      "id": 616112098,
-      "node_id": "RA_kwDOU1vGq84kuR_i",
-      "name": "ani-6.2.0-harmony.8-arm64-v8a.apk",
+      "url": "https://api.github.com/repos/Xun2202/animeko-harmony/releases/assets/616341032",
+      "id": 616341032,
+      "node_id": "RA_kwDOU1vGq84kvJ4o",
+      "name": "ani-6.2.0-harmony.9-arm64-v8a.apk",
       "label": "",
       "uploader": {
         "login": "github-actions[bot]",
@@ -65,18 +65,18 @@
       },
       "content_type": "application/vnd.android.package-archive",
       "state": "uploaded",
-      "size": 37154310,
-      "digest": "sha256:3e847a206595ee6ec98b608e8772a15a1019162e1b1d98bc08899e36a87e3ee0",
-      "download_count": 2,
-      "created_at": "2026-10-06T16:58:47Z",
-      "updated_at": "2026-10-06T16:58:49Z",
-      "browser_download_url": "https://github.com/Xun2202/animeko-harmony/releases/download/v6.2.0-harmony.8/ani-6.2.0-harmony.8-arm64-v8a.apk"
+      "size": 37154762,
+      "digest": "sha256:f43708b507458e761b17821fa93e4ef3b8efd65dcb87994b9adcd28b06c05c4e",
+      "download_count": 0,
+      "created_at": "2026-10-06T18:39:28Z",
+      "updated_at": "2026-10-06T18:39:30Z",
+      "browser_download_url": "https://github.com/Xun2202/animeko-harmony/releases/download/v6.2.0-harmony.9/ani-6.2.0-harmony.9-arm64-v8a.apk"
     },
     {
-      "url": "https://api.github.com/repos/Xun2202/animeko-harmony/releases/assets/616112101",
-      "id": 616112101,
-      "node_id": "RA_kwDOU1vGq84kuR_l",
-      "name": "ani-6.2.0-harmony.8-arm64-v8a.apk.sha1",
+      "url": "https://api.github.com/repos/Xun2202/animeko-harmony/releases/assets/616341033",
+      "id": 616341033,
+      "node_id": "RA_kwDOU1vGq84kvJ4p",
+      "name": "ani-6.2.0-harmony.9-arm64-v8a.apk.sha1",
       "label": "",
       "uploader": {
         "login": "github-actions[bot]",
@@ -102,14 +102,14 @@
       "content_type": "application/octet-stream",
       "state": "uploaded",
       "size": 41,
-      "digest": "sha256:e23852f4011e3ccad9d7b24c4ca1276b14f42d72e192900e504bcd8793b58b65",
+      "digest": "sha256:44ce0f868cbcd126d52d087e0db532d58814cb895a413a9a60733dcaaa3ec3e6",
       "download_count": 0,
-      "created_at": "2026-10-06T16:58:47Z",
-      "updated_at": "2026-10-06T16:58:47Z",
-      "browser_download_url": "https://github.com/Xun2202/animeko-harmony/releases/download/v6.2.0-harmony.8/ani-6.2.0-harmony.8-arm64-v8a.apk.sha1"
+      "created_at": "2026-10-06T18:39:28Z",
+      "updated_at": "2026-10-06T18:39:29Z",
+      "browser_download_url": "https://github.com/Xun2202/animeko-harmony/releases/download/v6.2.0-harmony.9/ani-6.2.0-harmony.9-arm64-v8a.apk.sha1"
     }
   ],
-  "tarball_url": "https://api.github.com/repos/Xun2202/animeko-harmony/tarball/v6.2.0-harmony.8",
-  "zipball_url": "https://api.github.com/repos/Xun2202/animeko-harmony/zipball/v6.2.0-harmony.8",
-  "body": "基于 [Animeko v6.2.0](https://github.com/open-ani/animeko/releases/tag/v6.2.0) 的非官方 HarmonyOS / 卓易通 兼容构建。\n\n## 本次变更\n\n- 关闭「自动检查更新」后，设置页的「检查更新」仍可手动检查、下载并安装新版本；没有新版本时会提示「已是最新」。\n- 新版本弹窗里的更新说明改为可滚动，不再把按钮挤出屏幕；下载按钮由「自动更新」改名为「立即更新」。\n- 更新弹窗只显示 Release 正文的「本次变更」一节，而不是补丁清单和安装说明。\n- 「应用内下载」开关不再因关闭自动检查而变灰。\n- 启动时自动删除已经安装完成的更新安装包，不再占用缓存空间；「查看更新日志」指向本仓库的 Release 页。\n\n## 本构建包含的补丁\n\n- `0001-android-harden-foreground-service-notification.patch`: fix(android): always startForeground for torrent service, stop relying on activeNotifications\n- `0002-updater-use-harmony-fork-releases.patch`: feat(update): check the Harmony fork's GitHub releases for -harmony builds\n- `0003-android-use-harmony-application-id.patch`: android: use a dedicated applicationId for the Harmony build\n- `0004-android-foreground-service-for-http-caches.patch`: android: keep the app process alive while web-source caches download\n- `0005-android-battery-exemption-and-wake-lock.patch`: android: ask for battery optimisation exemption and hold a wake lock while caching\n- `0006-android-silent-audio-keep-alive.patch`: android: play a silent audio loop while web-source caches download\n- `0007-android-download-notification-progress.patch`: android: show progress in the download service notifications\n- `0008-update-manual-check-and-popup-fixes.patch`: update: let manual checks work with auto-check off and fix the new-version popup\n\n## 安装说明\n\n- 下载 `ani-6.2.0-harmony.8-arm64-v8a.apk`（华为设备均为 arm64）。\n- 包名为 `me.him188.ani.harmony`，桌面名称仍为「Animeko」；与官方版是两个独立应用，可以共存（桌面会出现两个同名图标）；harmony 版本之间可直接覆盖安装。\n- 若此前装过 `v6.2.0-harmony.1`（旧包名，卓易通会拒装），直接安装本版本即可，无需处理。\n- 提示「出境易暂不支持安装该应用」= APK 被交给了出境易（白名单商店，装不了任何第三方 APK）。常见于在出境易里的浏览器下载后直接点开。把 APK 复制到本机存储（文件管理 → 兼容应用数据 → Download 里长按复制），再用系统「文件管理」打开副本即可由卓易通安装。详见仓库 README。\n- 应用内更新会检查本仓库的 Release，而不是官方更新服务器。\n- **让下载在后台继续**：鸿蒙 设置 → 应用和服务 → 应用启动管理 → Animeko（或卓易通）→ 关闭自动管理，勾选「允许后台活动」；第一次缓存时弹出的「忽略电池优化」请求选允许；设置 → 电池 → 更多电池设置 → 开「休眠时始终保持网络连接」。详见 README。\n\n## 校验\n\n```\ncd1541615a82bfbb66a6827274416f946452057c  ani-6.2.0-harmony.8-arm64-v8a.apk\n```\n"
+  "tarball_url": "https://api.github.com/repos/Xun2202/animeko-harmony/tarball/v6.2.0-harmony.9",
+  "zipball_url": "https://api.github.com/repos/Xun2202/animeko-harmony/zipball/v6.2.0-harmony.9",
+  "body": "基于 [Animeko v6.2.0](https://github.com/open-ani/animeko/releases/tag/v6.2.0) 的非官方 HarmonyOS / 卓易通 兼容构建。\n\n## 本次变更\n\n- 检查更新改为先读本仓库 `repo` 分支上的 Release 索引（raw.githubusercontent.com），读不到再请求 GitHub 接口；不再因为 GitHub 匿名接口「每个 IP 每小时 60 次」的配额被用完而报 HTTP 403。\n\n## 本构建包含的补丁\n\n- `0001-android-harden-foreground-service-notification.patch`: fix(android): always startForeground for torrent service, stop relying on activeNotifications\n- `0002-updater-use-harmony-fork-releases.patch`: feat(update): check the Harmony fork's GitHub releases for -harmony builds\n- `0003-android-use-harmony-application-id.patch`: android: use a dedicated applicationId for the Harmony build\n- `0004-android-foreground-service-for-http-caches.patch`: android: keep the app process alive while web-source caches download\n- `0005-android-battery-exemption-and-wake-lock.patch`: android: ask for battery optimisation exemption and hold a wake lock while caching\n- `0006-android-silent-audio-keep-alive.patch`: android: play a silent audio loop while web-source caches download\n- `0007-android-download-notification-progress.patch`: android: show progress in the download service notifications\n- `0008-update-manual-check-and-popup-fixes.patch`: update: let manual checks work with auto-check off and fix the new-version popup\n- `0009-update-release-mirror.patch`: update: read the fork release list from the repo-branch mirror first\n\n## 安装说明\n\n- 下载 `ani-6.2.0-harmony.9-arm64-v8a.apk`（华为设备均为 arm64）。\n- 包名为 `me.him188.ani.harmony`，桌面名称仍为「Animeko」；与官方版是两个独立应用，可以共存（桌面会出现两个同名图标）；harmony 版本之间可直接覆盖安装。\n- 若此前装过 `v6.2.0-harmony.1`（旧包名，卓易通会拒装），直接安装本版本即可，无需处理。\n- 提示「出境易暂不支持安装该应用」= APK 被交给了出境易（白名单商店，装不了任何第三方 APK）。常见于在出境易里的浏览器下载后直接点开。把 APK 复制到本机存储（文件管理 → 兼容应用数据 → Download 里长按复制），再用系统「文件管理」打开副本即可由卓易通安装。详见仓库 README。\n- 应用内更新会检查本仓库的 Release，而不是官方更新服务器。\n- **让下载在后台继续**：鸿蒙 设置 → 应用和服务 → 应用启动管理 → Animeko（或卓易通）→ 关闭自动管理，勾选「允许后台活动」；第一次缓存时弹出的「忽略电池优化」请求选允许；设置 → 电池 → 更多电池设置 → 开「休眠时始终保持网络连接」。详见 README。\n\n## 校验\n\n```\n3d246a44e9bc10db45c86d23ebeef55d7f748a72  ani-6.2.0-harmony.9-arm64-v8a.apk\n```\n"
 }
