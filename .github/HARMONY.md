@@ -24,7 +24,7 @@
 | 构建 | `.github/workflows/harmony_release.yml`，ubuntu-24.04，Temurin JDK 21，`assembleDefaultRelease`，只编 `arm64-v8a` |
 | 触发 | 每天 UTC 03:23 定时 + 手动 `workflow_dispatch` |
 | 补丁健康检查 | `.github/workflows/check_patches.yml`：补丁改动时 + 每周一，试套官方最新稳定版（必须成功）和 `main`（只警告） |
-| 应用内更新 | 补丁 0002 把更新源改为本仓库 Releases；0008 修手动检查 / 弹窗 / 更新说明来源（`patches/CHANGELOG.md` → Release 正文「本次变更」） |
+| 应用内更新 | 补丁 0002 把更新源改为本仓库 Releases；0008 修手动检查 / 弹窗 / 更新说明来源（`patches/CHANGELOG.md` → Release 正文「本次变更」）；0009 先读 `repo` 分支的 `releases.json` 镜像再退回 `api.github.com`（匿名接口每 IP 每小时 60 次配额） |
 
 ## 3. 目录结构
 
@@ -39,9 +39,12 @@ patches/
   0006-android-silent-audio-keep-alive.patch
   0007-android-download-notification-progress.patch
   0008-update-manual-check-and-popup-fixes.patch
+  0009-update-release-mirror.patch
   CHANGELOG.md                             # 每个 harmony.N 一节, 发版时写进 Release 正文「本次变更」, 应用内更新弹窗只显示这一节
 scripts/prepare-source.sh                  # 套补丁 + 改更新器仓库名 + 改版本号, workflow 和本地都用它
-.github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release
+scripts/write-release-index.sh             # Releases 接口返回 → repo 分支的 releases.json / latest.json
+.github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release → 写 Release 索引
+.github/workflows/release_index.yml        # Release 被手动增删改时重写索引 (也可手动触发)
 .github/workflows/check_patches.yml        # 补丁能否套到上游最新稳定版 / main
 docs/ANALYSIS.md                           # 问题分析与真机取证方法
 ```
@@ -129,6 +132,19 @@ rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheServi
 
 配套：`harmony_release.yml` 的「Write release notes」步骤用 `awk` 从 `patches/CHANGELOG.md` 取 `## harmony.$PATCH_NUMBER` 小节写成「## 本次变更」（找不到则写「- 见下方补丁列表。」），放在补丁清单之前。**每次发版前先在 CHANGELOG.md 补一节**，否则弹窗里只会看到那句兜底文案。
 
+### 0009 Release 索引镜像（`app/shared/ui-settings/.../ui/update/HarmonyForkUpdates.kt`）
+
+- 新增 `HARMONY_FORK_RELEASES_MIRROR = https://raw.githubusercontent.com/$HARMONY_FORK_REPO/repo/releases.json` 和 `HttpClient.listHarmonyForkReleases()`：
+  先 `get(镜像)` 并解析成 `List<GitHubRelease>`，`CancellationException` 直接抛，其他异常（`UpdateChecker` 的客户端 `expectSuccess = true`，404 / 超时都走这里）
+  `logger.warn` 后退回原来的 `api.github.com/repos/<repo>/releases?per_page=30`。`getHarmonyForkLatestVersion()` 改调它，其余不变。
+- 起因：Anikku 用户的「检查更新」报 HTTP 403——匿名 GitHub 接口每个出口 IP 每小时 60 次，NAT / 代理后面所有人共用。三个 App 的更新检查都直接打这个接口，按跨 App 规则统一改。
+- 镜像文件必须保持是接口原样返回，`GitHubRelease` 用到的字段（`tag_name` / `body` / `published_at` / `draft` / `prerelease` / `assets[].name` / `assets[].browser_download_url`）一个都不能少。
+  `prepare-source.sh` 替换 `HARMONY_FORK_REPO` 常量时镜像 URL 会跟着变（它由该常量拼出）。
+
+配套：`scripts/write-release-index.sh` 把 `gh api repos/<repo>/releases?per_page=30` 原样存成 `releases.json`、`jq` 取最新正式版存成 `latest.json`，连同说明 `README.md`
+提交到孤儿分支 `repo`（被并发推送拒绝就重取重写，最多 3 次）。`harmony_release.yml` 在 `gh release create` 之后调用它（`GITHUB_TOKEN` 创建的 Release 不触发 `release` 事件）；
+`release_index.yml` 在 Release 被手动增删改（含标 prerelease）或手动触发时再跑一遍。`repo` 分支不要手改。CDN 对该文件缓存最多约 5 分钟。
+
 ## 5. 日常操作
 
 ### 5.1 手动出新版
@@ -182,7 +198,9 @@ Animeko 的 Gradle 通过环境变量读取签名参数（`build-logic/src/main/
 | `Cannot find a Java installation ... vendor matching('jetbrains')` | `local.properties` 里 `jvm.toolchain.vendor` 没写或与实际 JDK 不匹配。workflow 用 Temurin，写 `adoptium` |
 | Gradle OOM / 被 kill | 上游 CI 的参数是 `-Xmx8g` + 6g Kotlin daemon + 10G swap，本仓库照搬；若仍失败可把 `ani.android.abis` 保持 `arm64-v8a`（已是）并去掉 `--parallel` |
 | `assembleDefaultRelease` 成功但找不到 APK | 路径是 `app/android/build/outputs/apk/default/release/android-default-<abi>-release.apk`；`splits.abi.isUniversalApk=true` 还会多出 `-universal-`。改了 ABI 列表要同步改 workflow 的收集步骤 |
-| Release 建好了但 App 检查不到更新 | 检查 tag 是否严格是 `vX.Y.Z-harmony.N`、Release 不是 draft、资产名以 `-arm64-v8a.apk` 结尾；GitHub API 匿名限流 60 次/小时，短时间内反复点也可能 403 |
+| Release 建好了但 App 检查不到更新 | 检查 tag 是否严格是 `vX.Y.Z-harmony.N`、Release 不是 draft、资产名以 `-arm64-v8a.apk` 结尾，且 `repo` 分支的 `releases.json` 里已有它（0009 起 App 先读镜像，CDN 缓存最多约 5 分钟，刚发版等几分钟再点） |
+| 「检查更新」失败，日志 / 提示里是 HTTP 403 | 匿名 `api.github.com` 的配额（每个出口 IP 每小时 60 次）被用完，NAT / 代理后面所有人共用。等一小时或换网络；harmony.9 起先读 `repo` 分支的镜像，一般不会再撞上。仍 403 说明镜像也读不到（被墙 / 超时），logcat 里应有 `Release mirror unavailable` |
+| `repo` 分支的 `releases.json` 没更新 / 不存在 | 发版 workflow 的最后一步失败，或 Release 是手动改的而 `release_index.yml` 没跑。到 Actions 手动运行「Release index」；本地也可 `GH_TOKEN=... scripts/write-release-index.sh Xun2202/animeko-harmony` |
 | App 提示更新到官方版本 | 说明运行的不是 harmony 版本号（补丁 0002 没套上或 `version.name` 没改），看 prepare-source.sh 的输出 |
 | 鸿蒙提示「出境易暂不支持安装该应用」 | 卓易通拒装了：包名在其目录里但签名不匹配。确认 APK 的包名是 `me.him188.ani.harmony`（`aapt2 dump badging x.apk \| head -1`，补丁 0003 是否套上）。若上游重构后包名又变回 `me.him188.ani`，就会复现 |
 | 分享日志 / 应用内更新安装时崩溃 `Couldn't find meta-data for provider with authority` | `APP_APPLICATION_ID` 与 manifest 的 `${applicationId}` 不一致，检查补丁 0003 两处是否都套上 |
