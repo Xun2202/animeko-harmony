@@ -1,0 +1,168 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Xun2202 <98207886+Xun2202@users.noreply.github.com>
+Date: Tue, 6 Oct 2026 10:46:14 +0000
+Subject: [PATCH] android: show progress in the download service notifications
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Align the two download notifications with the HarmonyOS builds of
+Mihon and Anikku so that the three apps read alike in the shade:
+
+- content: "<speed text> · <progress>%" with a determinate progress bar
+  whenever the service knows the overall progress
+- HTTP cache service: progress is weighted by size over the active
+  in-process downloads (plain mean when a size is unknown, nothing when
+  none reports a progress), and the expanded notification shows the
+  "<subject> - <episode>" currently being cached
+- BT service: progress comes from TorrentDownloader.Stats.downloadProgress
+
+NotificationDisplayStrategy.Working gains optional progress / detail
+fields; the defaults keep the previous single-line notification, so
+no strings change.
+---
+ .../torrent/service/AniTorrentService.kt      |  6 ++++
+ .../torrent/service/HttpCacheService.kt       | 34 +++++++++++++++++++
+ .../torrent/service/ServiceNotification.kt    | 28 +++++++++++----
+ 3 files changed, 61 insertions(+), 7 deletions(-)
+
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt
+index 8b8c8c0..6942c2f 100644
+--- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt
+@@ -137,6 +137,12 @@ sealed class AniTorrentService : LifecycleService() {
+                             stats.downloadSpeed.bytes,
+                             stats.uploadSpeed.bytes,
+                             downloadingSessionCount,
++                            // Harmony: overall progress of the open sessions, like the HTTP cache notification.
++                            progress = if (stats.totalSize > 0) {
++                                (stats.downloadProgress * 100).toInt().coerceIn(0, 100)
++                            } else {
++                                null
++                            },
+                         )
+                     } else {
+                         NotificationDisplayStrategy.Idle(stats.downloadSpeed.bytes, stats.uploadSpeed.bytes)
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
+index 1c5e5fd..9c27e94 100644
+--- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
+@@ -28,6 +28,7 @@ import me.him188.ani.app.domain.media.cache.MediaCacheState
+ import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
+ import me.him188.ani.app.domain.media.download.DownloadOperation
+ import me.him188.ani.app.domain.media.download.DownloadOperations
++import me.him188.ani.app.domain.media.download.DownloadSnapshot
+ import me.him188.ani.app.domain.media.download.MediaDownloadManager
+ import me.him188.ani.datasources.api.topic.FileSize
+ import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
+@@ -104,6 +105,8 @@ class HttpCacheService : LifecycleService(), KoinComponent {
+                                 activity.downloadSpeed,
+                                 FileSize.Zero,
+                                 activity.taskCount,
++                                progress = activity.progress,
++                                detail = activity.currentItem,
+                             )
+                         } else {
+                             NotificationDisplayStrategy.Idle(activity.downloadSpeed, FileSize.Zero)
+@@ -201,6 +204,10 @@ internal fun MediaCacheEngineKey.isInProcess(): Boolean = this != MediaCacheEngi
+ internal data class HttpDownloadActivity(
+     val taskCount: Int,
+     val downloadSpeed: FileSize,
++    /** Overall progress of the active downloads in percent, `null` while none of them reports one. */
++    val progress: Int? = null,
++    /** "<subject> - <episode>" of the first active download, for the expanded notification. */
++    val currentItem: String? = null,
+ )
+ 
+ /**
+@@ -218,6 +225,33 @@ internal fun httpDownloadActivity(manager: MediaDownloadManager): Flow<HttpDownl
+                 downloadSpeed = active
+                     .sumOf { snapshot -> snapshot.downloadSpeed.takeIf { !it.isUnspecified }?.inBytes ?: 0L }
+                     .bytes,
++                progress = active.overallProgressPercent(),
++                currentItem = active.firstOrNull()?.let { snapshot ->
++                    val metadata = snapshot.metadata
++                    val subject = metadata.subjectNameCN ?: metadata.subjectNames.firstOrNull()
++                    val episode = "${metadata.episodeSort} ${metadata.episodeName}".trim()
++                    listOfNotNull(subject, episode.takeIf { it.isNotEmpty() }).joinToString(" - ")
++                },
+             )
+         }
+         .distinctUntilChanged()
++
++/**
++ * Weighted by size where every download knows its total size, otherwise the plain mean of the
++ * downloads that report a progress at all; `null` when none does (e.g. HLS streams without a
++ * known length).
++ */
++private fun List<DownloadSnapshot>.overallProgressPercent(): Int? {
++    val reporting = mapNotNull { snapshot ->
++        snapshot.progress.getOrNull()?.let { fraction -> fraction to snapshot.totalSize }
++    }
++    if (reporting.isEmpty()) return null
++
++    val fraction = if (reporting.all { (_, size) -> !size.isUnspecified && size.inBytes > 0 }) {
++        val total = reporting.sumOf { (_, size) -> size.inBytes }
++        reporting.sumOf { (progress, size) -> (progress * size.inBytes).toDouble() } / total
++    } else {
++        reporting.sumOf { (progress, _) -> progress.toDouble() } / reporting.size
++    }
++    return (fraction * 100).toInt().coerceIn(0, 100)
++}
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
+index e48b949..3e34a25 100644
+--- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
+@@ -205,6 +205,17 @@ class ServiceNotification(
+                 PendingIntent.FLAG_IMMUTABLE,
+             )
+ 
++        // Harmony: same layout as the Mihon / Anikku HarmonyOS builds so that the three apps read
++        // alike in the shade: "<content> · <progress>%", a determinate progress bar, and the current
++        // item in the expanded text when the service knows it.
++        val speedText = String.format(
++            notificationAppearance.content,
++            "${displayStrategy.downloadSpeed}/s",
++            "${displayStrategy.uploadSpeed}/s",
++        )
++        val working = displayStrategy as? NotificationDisplayStrategy.Working
++        val contentText = working?.progress?.let { "$speedText · $it%" } ?: speedText
++
+         return Notification.Builder(context, notificationChannel.id).apply {
+             setContentTitle(
+                 when (displayStrategy) {
+@@ -213,13 +224,9 @@ class ServiceNotification(
+                         String.format(appearance.titleWorking, displayStrategy.taskCount)
+                 },
+             )
+-            setContentText(
+-                String.format(
+-                    notificationAppearance.content,
+-                    "${displayStrategy.downloadSpeed}/s",
+-                    "${displayStrategy.uploadSpeed}/s",
+-                ),
+-            )
++            setContentText(contentText)
++            working?.progress?.let { setProgress(100, it, false) }
++            working?.detail?.let { setStyle(Notification.BigTextStyle().bigText("$contentText\n$it")) }
+             setSmallIcon(notificationAppearance.icon)
+             setContentIntent(openActivityAction)
+             setActions(
+@@ -281,9 +288,16 @@ sealed class NotificationDisplayStrategy(val downloadSpeed: FileSize, val upload
+         uploadSpeed: FileSize
+     ) : NotificationDisplayStrategy(downloadSpeed, uploadSpeed)
+ 
++    /**
++     * @param progress overall progress in percent (0..100), `null` when the service cannot tell.
++     * @param detail the item being downloaded, shown as a second line when the notification is
++     * expanded; `null` to show the plain single-line notification.
++     */
+     class Working(
+         downloadSpeed: FileSize,
+         uploadSpeed: FileSize,
+         val taskCount: Int,
++        val progress: Int? = null,
++        val detail: String? = null,
+     ) : NotificationDisplayStrategy(downloadSpeed, uploadSpeed)
+ }
+\ No newline at end of file

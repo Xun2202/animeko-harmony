@@ -5,3 +5,4 @@
 0004-android-foreground-service-for-http-caches.patch
 0005-android-battery-exemption-and-wake-lock.patch
 0006-android-silent-audio-keep-alive.patch
+0007-android-download-notification-progress.patch
