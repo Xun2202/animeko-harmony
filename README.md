@@ -17,6 +17,7 @@
   手动更新：设置 → 软件更新 → 「检查更新」，有新版本时按钮变成「有新版本: x.y.z-harmony.N」，页面底部同时弹出「新版本 …」横条，点「查看」→「**立即更新**」即在应用内下载，下载完点「重启更新」交给系统安装器（按钮文案是上游桌面端的叫法，Android 上就是安装）。
   harmony.7 及之前关闭「自动检查更新」后这个按钮是失效的（上游把手动检查也挂在了同一个开关下），而且弹窗里的更新说明不能滚动、会把按钮挤出屏幕，harmony.8 起已修复；装不上新版时也可以直接从 Releases 下载 APK 覆盖安装。
   装完后残留在缓存里的安装包会在下次启动时自动删除（harmony.8 起）。
+  窄屏手机上弹窗里的「立即更新」按钮被挤成两行、更新说明里出现 `` ` `` 之类的 Markdown 符号：harmony.10 起修复（按钮放不下时整体换行，说明按纯文本显示）。
   **「检查更新」失败 / 报 403**：更新检查以前直接请求 `api.github.com`，GitHub 对匿名请求的配额是**每个出口 IP 每小时 60 次**，手机走运营商 NAT 或代理时这 60 次是和同一出口的所有人共用的，用完就是 403，一小时后自动恢复。
   harmony.9 起优先读本仓库 `repo` 分支上由流水线生成的 Release 索引（`raw.githubusercontent.com/Xun2202/animeko-harmony/repo/releases.json`，普通 CDN，没有这个配额），读不到再退回 GitHub 接口；索引有最多约 5 分钟的 CDN 缓存，刚发版就点可能要等几分钟。
 - 若同时装了官方版，点击 `ani://` 链接（扫码登录、分享链接等）时系统会弹出选择框，两个都叫 Animeko，不想纠结的话卸载官方版即可。
@@ -65,6 +66,7 @@
 | [`0007-android-download-notification-progress.patch`](./patches/0007-android-download-notification-progress.patch) | 两个下载前台服务的通知与 Mihon / Anikku 鸿蒙版统一：正文在速度后追加「 · N%」并显示确定型进度条（在线源缓存按文件大小加权汇总各任务进度，大小未知时取平均；BT 用 `TorrentDownloader.Stats.downloadProgress`），在线源缓存通知下拉展开还显示正在缓存的「番剧 - 集」。`NotificationDisplayStrategy.Working` 新增可选的 `progress` / `detail`，不改任何字符串。 |
 | [`0008-update-manual-check-and-popup-fixes.patch`](./patches/0008-update-manual-check-and-popup-fixes.patch) | 修复应用内更新的四个问题：① 设置页「检查更新」与自动检查走同一个 `autoCheckUpdate` 判断，关闭「自动检查更新」后手动点也没反应，现在只有自动检查受开关控制，手动检查没有新版本时显示「已是最新」；② `NewVersionPopupCard` 的更新说明是对话框里一个不能滚动的 `Column`，说明一长（本仓库 Release 正文开头是补丁清单）就把「查看详情 / 立即更新」挤出屏幕，现在限高 280dp 内滚动；③ `HarmonyForkUpdates` 只取 Release 正文「## 本次变更」一节作为更新说明（内容来自 [`patches/CHANGELOG.md`](./patches/CHANGELOG.md)，由 `harmony_release.yml` 写进正文），没有该节的旧 Release 回退到整段正文；④ 「应用内下载」开关不再随「自动检查更新」一起变灰，弹窗按钮「自动更新」改为「立即更新」（en: Update now），设置页「查看更新日志」对 harmony 版本指向本仓库 Release 页。另外 Android 启动时调用上游已有的 `UpdateManager.deleteInstalledFiles()`（此前只有桌面端调用），删除已安装完成的安装包。 |
 | [`0009-update-release-mirror.patch`](./patches/0009-update-release-mirror.patch) | 修复「检查更新」撞上 GitHub 匿名接口配额（每个出口 IP 每小时 60 次，NAT / 代理后面所有人共用）而失败（HTTP 403）：`HarmonyForkUpdates.kt` 新增 `listHarmonyForkReleases()`，优先读 `https://raw.githubusercontent.com/<repo>/repo/releases.json`（流水线写的接口原样镜像），失败再退回 `api.github.com/repos/<repo>/releases?per_page=30`；版本比较、`本次变更` 提取、APK 挑选逻辑不变。与 mihon-harmony 0008、anikku-harmony 0014 同一轮。 |
+| [`0010-update-popup-narrow-screen-and-plain-changelog.patch`](./patches/0010-update-popup-narrow-screen-and-plain-changelog.patch) | 修复窄屏手机上新版本弹窗的排版：「查看详情」和「立即更新」放不进一行时，`BasicNotificationPopupCard` 的 `Row` 会把最后一个按钮压扁、文字折成两行；改为把按钮放进 `FlowRow`（间距 8 dp / 12 dp，与 Material3 `AlertDialog` 的按钮区一致）整体换行。另外弹窗按纯文本显示更新说明，`harmonyForkChangelog()` 现在会去掉行内的 `` ` ``、`**`、`__` 和 `[文字](链接)` 标记，不再把 Markdown 符号原样显示出来。 |
 
 补丁按 [`patches/series`](./patches/series) 的顺序套用。
 
@@ -75,7 +77,7 @@
 
 ## 构建机制
 
-流水线定义在 [`.github/workflows/harmony_release.yml`](./.github/workflows/harmony_release.yml)，每天 UTC 03:23（北京 11:23）定时运行，也可以在 Actions 里手动触发并指定 `upstream_tag` / `patch_number`：
+流水线定义在 [`.github/workflows/harmony_release.yml`](./.github/workflows/harmony_release.yml)，每天 UTC 03:23（北京 11:23）定时运行，也可以在 Actions 里手动触发并指定 `upstream_tag` / `patch_number`，或勾选 `dry_run` 只编译、上传 artifact 而不发 Release（发版前验证补丁能编过）：
 
 1. 取官方最新稳定版 tag（或手动指定），若 `v<版本>-harmony.<N>` 的 Release 已存在则直接结束。
 2. `git clone --depth 1 --branch <tag>` 官方源码（Android 端的 anitorrent 原生库来自 Maven，无需 boost 子模块）。

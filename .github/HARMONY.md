@@ -22,9 +22,9 @@
 | 包名 | `me.him188.ani.harmony`（补丁 0003），桌面名称仍为「Animeko」→ 与官方版 `me.him188.ani` 共存。`harmony.1` 曾用官方包名，被卓易通以签名不匹配拒装 |
 | versionCode | 沿用上游固定值 `android.version.code`（上游刻意不变，方便回退），harmony 版本之间可任意覆盖 |
 | 构建 | `.github/workflows/harmony_release.yml`，ubuntu-24.04，Temurin JDK 21，`assembleDefaultRelease`，只编 `arm64-v8a` |
-| 触发 | 每天 UTC 03:23 定时 + 手动 `workflow_dispatch` |
+| 触发 | 每天 UTC 03:23 定时（只会发 `harmony.1`，补丁号默认 1）+ 手动 `workflow_dispatch`（`dry_run` 勾上则只编译、传 artifact，不发 Release） |
 | 补丁健康检查 | `.github/workflows/check_patches.yml`：补丁改动时 + 每周一，试套官方最新稳定版（必须成功）和 `main`（只警告） |
-| 应用内更新 | 补丁 0002 把更新源改为本仓库 Releases；0008 修手动检查 / 弹窗 / 更新说明来源（`patches/CHANGELOG.md` → Release 正文「本次变更」）；0009 先读 `repo` 分支的 `releases.json` 镜像再退回 `api.github.com`（匿名接口每 IP 每小时 60 次配额） |
+| 应用内更新 | 补丁 0002 把更新源改为本仓库 Releases；0008 修手动检查 / 弹窗 / 更新说明来源（`patches/CHANGELOG.md` → Release 正文「本次变更」）；0010 弹窗按钮在窄屏上整体换行、更新说明去掉 Markdown 标记（待发版）；0009 先读 `repo` 分支的 `releases.json` 镜像再退回 `api.github.com`（匿名接口每 IP 每小时 60 次配额） |
 
 ## 3. 目录结构
 
@@ -40,10 +40,11 @@ patches/
   0007-android-download-notification-progress.patch
   0008-update-manual-check-and-popup-fixes.patch
   0009-update-release-mirror.patch
+  0010-update-popup-narrow-screen-and-plain-changelog.patch
   CHANGELOG.md                             # 每个 harmony.N 一节, 发版时写进 Release 正文「本次变更」, 应用内更新弹窗只显示这一节
 scripts/prepare-source.sh                  # 套补丁 + 改更新器仓库名 + 改版本号, workflow 和本地都用它
 scripts/write-release-index.sh             # Releases 接口返回 → repo 分支的 releases.json / latest.json
-.github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release → 写 Release 索引
+.github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release → 写 Release 索引 (dry_run 只到编译为止)
 .github/workflows/release_index.yml        # Release 被手动增删改时重写索引 (也可手动触发)
 .github/workflows/check_patches.yml        # 补丁能否套到上游最新稳定版 / main
 docs/ANALYSIS.md                           # 问题分析与真机取证方法
@@ -145,6 +146,15 @@ rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheServi
 提交到孤儿分支 `repo`（被并发推送拒绝就重取重写，最多 3 次）。`harmony_release.yml` 在 `gh release create` 之后调用它（`GITHUB_TOKEN` 创建的 Release 不触发 `release` 事件）；
 `release_index.yml` 在 Release 被手动增删改（含标 prerelease）或手动触发时再跑一遍。`repo` 分支不要手改。CDN 对该文件缓存最多约 5 分钟。
 
+### 0010 窄屏弹窗排版 + 纯文本更新说明（`app/shared/ui-settings/.../ui/update/NewVersionDialog.kt`、`HarmonyForkUpdates.kt`）
+
+- 起因：用户在窄屏手机上装 harmony.9 时，新版本弹窗的「立即更新」被挤成两行。`BasicNotificationPopupCard` 的按钮区是 `Row { FlowRow(weight 1f) { secondaryActions() }; actions() }`，`Row` 给非 weight 子项的宽度是「剩余宽度」，`查看详情`（图标 + 文字 + 24 dp 内边距 ≈ 140 dp）先占掉后，`立即更新` 只剩不到它需要的 ≈ 110 dp，于是文字折行。手机上的对话框宽度 ≈ 屏宽 − 48 dp，卡片内容区再减 48 dp 内边距，360 dp 屏约 264 dp、更窄的屏 ≈ 232 dp，正好卡在临界点；系统字体放大时更容易触发。
+- 修法：`actions()` 放进 `FlowRow(horizontalArrangement = spacedBy(8.dp, Alignment.End), verticalArrangement = spacedBy(12.dp, CenterVertically))`——`Row` 会用整行宽度去量这个 `FlowRow`，放得下就一行，放不下「立即更新」整体换到下一行右对齐（Material3 `AlertDialog` 的按钮区正是这个做法）。`NewVersionPopupCard` 里两个按钮之间的 `Spacer(16.dp)` 删掉，间距由 `FlowRow` 负责。`secondaryActions`（没有任何调用方传入）与 `DownloadingUpdatePopupCard`（只有一个按钮）不受影响。用 Compose Desktop 的 `ImageComposeScene` 在 280 / 312 / 328 / 360 / 428 dp 宽度下渲染过修改前后对比：280 dp 时修改前「立即 / 更新」折成两行，修改后换行到第二排；312 dp 起两者一致。
+- 顺带：弹窗把 `## 本次变更` 的每一行当纯文本显示，`CHANGELOG.md` 里写的 `` `repo` `` 之类会原样露出反引号。`harmonyForkChangelog()` 的每一行先过 `stripInlineMarkdown()`（去掉 `` ` ``、`**`、`__`，`[文字](链接)` → `文字`）。`majorChanges` 取前 4 行、第一行还会拼进底部横条，所以 `CHANGELOG.md` 的要点要短、不要写 Markdown（文件头已写明）。
+- 上游 `main` 的 `NewVersionDialog.kt` 与 v6.2.0 完全相同（2026-10-07 核对），rebase 时若上游重写了按钮区，保留「按钮放进 FlowRow 换行」这一点即可。
+
+配套：`harmony_release.yml` 新增 `dry_run` 输入（与 mihon-harmony / anikku-harmony 一致）：勾上时跳过「Release 已存在」检查、照常编译并上传 artifact，不建 Release、不写索引。用途是在不发版的情况下验证补丁能编过——这张补丁就是用 `dry_run` 验证后留在 `main` 上等下一次发版的（run 37566752171，03:26→03:35 UTC 绿，artifact `animeko-harmony-v6.2.0-harmony.10`：包名 / 签名与 harmony.9 一致，versionName `6.2.0-harmony.10`，dex 含两条新正则）。
+
 ## 5. 日常操作
 
 ### 5.1 手动出新版
@@ -153,7 +163,8 @@ Actions → **Harmony Release** → Run workflow：
 
 - `upstream_tag`：官方 tag，如 `v6.3.0`；留空取最新稳定版。只接受 `vX.Y.Z`，不支持 alpha/beta。
 - `patch_number`：同一官方版本第几次打包，从 `1` 开始。改了补丁想重编就填 `2`、`3`……
-- 发版前在 `patches/CHANGELOG.md` 加 `## harmony.<N>` 小节（给用户看的要点，每行 `- ` 开头），它会成为 Release 正文和应用内更新弹窗的「本次变更」。
+- 发版前在 `patches/CHANGELOG.md` 加 `## harmony.<N>` 小节（给用户看的要点，每行 `- ` 开头，每条不超过 30 个字、不写 Markdown），它会成为 Release 正文和应用内更新弹窗的「本次变更」。
+- `dry_run`：勾上只编译、上传 artifact，不建 Release 也不写索引；想先确认补丁能编过时用它（`patch_number` 随便填，不会和已有 Release 冲突）。
 
 同名 Release 已存在会直接跳过；要重编必须换补丁号或先删旧 Release。整个流程约 15 分钟（首个版本 `v6.2.0-harmony.1` 实测 14 分钟；Animeko 编译很重，参数照搬上游 CI 的 8g 堆 + 10g swap）。
 
@@ -207,6 +218,7 @@ Animeko 的 Gradle 通过环境变量读取签名参数（`build-logic/src/main/
 | 在线源缓存通知只有速度、没有百分比 | 所有活动任务的 `DownloadSnapshot.progress` 都是 `Unspecified`（例如长度未知的 HLS 流），0007 按设计不显示进度；只要有一个任务报进度就会出现百分比 |
 | 关了「自动检查更新」后点「检查更新」只闪一下、没反应 | harmony.7 及之前的上游行为（手动检查也受该开关控制）。升级到 harmony.8；或先打开自动检查再点 |
 | 新版本弹窗里按钮看不到 / 被挤出屏幕 | harmony.7 及之前更新说明不可滚动且显示的是整段 Release 正文。升级到 harmony.8；临时办法是直接去 Releases 页下载 APK 覆盖安装 |
+| 窄屏手机上弹窗的「立即更新」被挤成两行 / 更新说明里有 `` ` `` 等符号 | harmony.9 及之前的布局（`Row` 压扁最后一个按钮）。升级到 harmony.10 起的版本；若新布局下按钮仍重叠或被裁掉，发截图并说明屏幕宽度（设置 → 关于 → 分辨率）和系统字体大小 |
 | 更新弹窗只显示「见下方补丁列表。」 | 发版前没在 `patches/CHANGELOG.md` 补 `## harmony.<N>` 小节。补上后下次发版生效；已发布的 Release 可用 `gh release edit --notes-file` 改正文，App 下次检查就会读到 |
 
 ## 8. 已知限制与后续方向
