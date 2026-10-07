@@ -1,0 +1,88 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Xun2202 <98207886+Xun2202@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 03:24:55 +0000
+Subject: [PATCH] update: wrap the popup buttons on narrow screens and strip
+ inline Markdown from the changelog
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+On narrow phones the new-version dialog cannot fit "查看详情" and "立即更新"
+on one line; the Row squeezed the last button and its label broke into
+two lines. Put the actions into a FlowRow (8 dp / 12 dp spacing, as in
+Material3 AlertDialog) so the buttons wrap as a whole instead.
+
+The popup renders each changelog line as plain text, so the `code`,
+**bold** and [link](url) markers written in patches/CHANGELOG.md showed
+up literally; strip them in harmonyForkChangelog().
+---
+ .../kotlin/ui/update/HarmonyForkUpdates.kt           |  9 ++++++++-
+ .../commonMain/kotlin/ui/update/NewVersionDialog.kt  | 12 ++++++++++--
+ 2 files changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
+index 0ecf84e..0a926d9 100644
+--- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
++++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
+@@ -139,11 +139,15 @@ internal suspend fun HttpClient.getHarmonyForkLatestVersion(
+ }
+ 
+ private val CHANGES_HEADING_REGEX = Regex("""^#{1,6}\s*本次变更\s*$""")
++private val MARKDOWN_LINK_REGEX = Regex("""\[([^\]]+)]\([^)]*\)""")
++private val MARKDOWN_INLINE_MARKER_REGEX = Regex("""`|\*\*|__""")
+ 
+ /**
+  * Fork release notes list every patch in the build plus install instructions; only the "本次变更" section
+  * describes what changed in that release. Returns `null` when the release has no such section (releases
+  * before it was introduced), so callers can fall back to the full body of the latest release.
++ *
++ * The popup shows each line as plain text, so inline Markdown (`code`, **bold**, [links](url)) is stripped.
+  */
+ internal fun harmonyForkChangelog(body: String): String? {
+     val lines = body.lines()
+@@ -151,11 +155,14 @@ internal fun harmonyForkChangelog(body: String): String? {
+     if (heading < 0) return null
+     return lines.drop(heading + 1)
+         .takeWhile { !it.trimStart().startsWith("#") }
+-        .joinToString("\n")
++        .joinToString("\n") { stripInlineMarkdown(it) }
+         .trim()
+         .takeIf { it.isNotEmpty() }
+ }
+ 
++internal fun stripInlineMarkdown(line: String): String =
++    line.replace(MARKDOWN_LINK_REGEX, "$1").replace(MARKDOWN_INLINE_MARKER_REGEX, "")
++
+ /**
+  * Picks the APK for this device first and the universal APK as a fallback. Release assets are named
+  * `ani-<version>-<abi>.apk`, matching the official release layout.
+diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt
+index 3659d08..cc509a8 100644
+--- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt
++++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt
+@@ -83,7 +83,6 @@ fun NewVersionPopupCard(
+                 Spacer(Modifier.width(8.dp))
+                 Text(stringResource(Lang.settings_update_popup_see_details))
+             }
+-            Spacer(Modifier.width(16.dp))
+             Button(
+                 onClick = onAutoUpdateClick,
+                 modifier = Modifier,
+@@ -178,7 +177,16 @@ fun BasicNotificationPopupCard(
+                 FlowRow(Modifier.weight(1f), verticalArrangement = Arrangement.aligned(Alignment.CenterVertically)) {
+                     secondaryActions()
+                 }
+-                actions()
++                // Harmony -->
++                // 窄屏手机的对话框里两个按钮放不进一行时, Row 会把最后一个按钮压扁、文字折成两行.
++                // 放进 FlowRow 让按钮整体换行 (Material3 AlertDialog 的按钮区也是这样做的), 间距同 AlertDialog.
++                FlowRow(
++                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
++                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
++                ) {
++                    actions()
++                }
++                // Harmony <--
+             }
+         }
+     }
