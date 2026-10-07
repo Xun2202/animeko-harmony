@@ -1,7 +1,8 @@
 name: Harmony Release
 
 # 每天检查 Animeko 官方最新稳定版; 若本仓库还没有对应的 <tag>-harmony.<N> Release,
-# 就拉取官方源码、套用 patches/ 下的补丁、编译签名 APK 并发布. 也可手动触发指定版本.
+# 就拉取官方源码、套用 patches/ 下的补丁、编译签名 APK 并发布. 也可手动触发指定版本,
+# 或只编译不发布 (dry_run).
 
 on:
   schedule:
@@ -17,6 +18,11 @@ on:
         required: true
         default: '1'
         type: string
+      dry_run:
+        description: '只编译并上传 artifact, 不创建 Release'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: harmony-release
@@ -77,8 +83,9 @@ jobs:
         id: existing
         env:
           RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if [[ "$DRY_RUN" != "true" ]] && gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists; nothing to do."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
@@ -258,7 +265,7 @@ jobs:
           cat "$RUNNER_TEMP/release-notes.md"
 
       - name: Create GitHub release
-        if: steps.existing.outputs.skip != 'true'
+        if: steps.existing.outputs.skip != 'true' && inputs.dry_run != true
         env:
           RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
           HARMONY_VERSION: ${{ steps.version.outputs.harmony_version }}
@@ -273,7 +280,7 @@ jobs:
             --notes-file "$RUNNER_TEMP/release-notes.md"
 
       - name: Update the release index on the repo branch
-        if: steps.existing.outputs.skip != 'true'
+        if: steps.existing.outputs.skip != 'true' && inputs.dry_run != true
         # 应用内更新器优先读 raw.githubusercontent.com/<repo>/repo/releases.json (见脚本注释).
         # GITHUB_TOKEN 创建的 Release 不会触发 release_index.yml, 所以这里自己写一遍.
         run: scripts/write-release-index.sh
