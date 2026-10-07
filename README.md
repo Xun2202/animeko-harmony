@@ -90,7 +90,7 @@
 
 ## Secrets
 
-已配置完成，[`v6.2.0-harmony.7`](../../releases/tag/v6.2.0-harmony.7)、[`v6.2.0-harmony.8`](../../releases/tag/v6.2.0-harmony.8) 等版本均由流水线自动产出。签名密钥备份在私有仓库 `Xun2202/keystores` 的 `animeko-harmony/` 目录（含各 Secret 的值、校验与一键恢复脚本；旧仓库 `animeko-harmony-keystore` 已归档）。仓库 Settings → Secrets and variables → Actions 中的条目：
+已配置完成，[`v6.2.0-harmony.8`](../../releases/tag/v6.2.0-harmony.8)、[`v6.2.0-harmony.10`](../../releases/tag/v6.2.0-harmony.10) 等版本均由流水线自动产出。签名密钥备份在私有仓库 `Xun2202/keystores` 的 `animeko-harmony/` 目录（含各 Secret 的值、校验与一键恢复脚本；旧仓库 `animeko-harmony-keystore` 已归档）。仓库 Settings → Secrets and variables → Actions 中的条目：
 
    | Secret | 内容 |
    | --- | --- |

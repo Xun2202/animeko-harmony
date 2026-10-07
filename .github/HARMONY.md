@@ -24,7 +24,7 @@
 | 构建 | `.github/workflows/harmony_release.yml`，ubuntu-24.04，Temurin JDK 21，`assembleDefaultRelease`，只编 `arm64-v8a` |
 | 触发 | 每天 UTC 03:23 定时（只会发 `harmony.1`，补丁号默认 1）+ 手动 `workflow_dispatch`（`dry_run` 勾上则只编译、传 artifact，不发 Release） |
 | 补丁健康检查 | `.github/workflows/check_patches.yml`：补丁改动时 + 每周一，试套官方最新稳定版（必须成功）和 `main`（只警告） |
-| 应用内更新 | 补丁 0002 把更新源改为本仓库 Releases；0008 修手动检查 / 弹窗 / 更新说明来源（`patches/CHANGELOG.md` → Release 正文「本次变更」）；0010 弹窗按钮在窄屏上整体换行、更新说明去掉 Markdown 标记（待发版）；0009 先读 `repo` 分支的 `releases.json` 镜像再退回 `api.github.com`（匿名接口每 IP 每小时 60 次配额） |
+| 应用内更新 | 补丁 0002 把更新源改为本仓库 Releases；0008 修手动检查 / 弹窗 / 更新说明来源（`patches/CHANGELOG.md` → Release 正文「本次变更」）；0010 弹窗按钮在窄屏上整体换行、更新说明去掉 Markdown 标记（harmony.10）；0009 先读 `repo` 分支的 `releases.json` 镜像再退回 `api.github.com`（匿名接口每 IP 每小时 60 次配额） |
 
 ## 3. 目录结构
 
@@ -153,7 +153,7 @@ rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheServi
 - 顺带：弹窗把 `## 本次变更` 的每一行当纯文本显示，`CHANGELOG.md` 里写的 `` `repo` `` 之类会原样露出反引号。`harmonyForkChangelog()` 的每一行先过 `stripInlineMarkdown()`（去掉 `` ` ``、`**`、`__`，`[文字](链接)` → `文字`）。`majorChanges` 取前 4 行、第一行还会拼进底部横条，所以 `CHANGELOG.md` 的要点要短、不要写 Markdown（文件头已写明）。
 - 上游 `main` 的 `NewVersionDialog.kt` 与 v6.2.0 完全相同（2026-10-07 核对），rebase 时若上游重写了按钮区，保留「按钮放进 FlowRow 换行」这一点即可。
 
-配套：`harmony_release.yml` 新增 `dry_run` 输入（与 mihon-harmony / anikku-harmony 一致）：勾上时跳过「Release 已存在」检查、照常编译并上传 artifact，不建 Release、不写索引。用途是在不发版的情况下验证补丁能编过——这张补丁就是用 `dry_run` 验证后留在 `main` 上等下一次发版的（run 37566752171，03:26→03:35 UTC 绿，artifact `animeko-harmony-v6.2.0-harmony.10`：包名 / 签名与 harmony.9 一致，versionName `6.2.0-harmony.10`，dex 含两条新正则）。
+配套：`harmony_release.yml` 新增 `dry_run` 输入（与 mihon-harmony / anikku-harmony 一致）：勾上时跳过「Release 已存在」检查、照常编译并上传 artifact，不建 Release、不写索引。用途是在不发版的情况下验证补丁能编过——这张补丁先用 `dry_run` 验证，随后用户同意直接发版（`v6.2.0-harmony.10`，run 37567896755，03:46 UTC）（dry run 37566752171，03:26→03:35 UTC 绿，artifact `animeko-harmony-v6.2.0-harmony.10`：包名 / 签名与 harmony.9 一致，versionName `6.2.0-harmony.10`，dex 含两条新正则）。
 
 ## 5. 日常操作
 
