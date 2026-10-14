@@ -84,7 +84,7 @@
 3. [`scripts/prepare-source.sh`](./scripts/prepare-source.sh)：按 `series` 顺序 `git apply --3way` 补丁、把更新器指向当前仓库、改写 `gradle.properties` 的 `version.name` / `package.version`，每一步各提交一次。
 4. Temurin JDK 21 + `./gradlew assembleDefaultRelease`（`ani.android.abis=arm64-v8a`），签名密钥来自仓库 Secrets。
 5. 产物重命名为 `ani-<版本>-arm64-v8a.apk`，附 `.sha1`，上传为 Actions artifact 并 `gh release create`。Release 正文的「本次变更」取自 [`patches/CHANGELOG.md`](./patches/CHANGELOG.md) 里 `## harmony.<N>` 小节（应用内更新弹窗只显示这一节），**发版前先在那里补一节**。
-6. [`scripts/write-release-index.sh`](./scripts/write-release-index.sh) 把 `GET /repos/<repo>/releases?per_page=30` 的返回原样写到孤儿分支 **`repo`** 的 `releases.json`（另附 `latest.json`），应用内更新器（0009 起）优先从 `raw.githubusercontent.com/Xun2202/animeko-harmony/repo/releases.json` 读它。`GITHUB_TOKEN` 创建的 Release 不会触发别的 workflow，所以发版流程自己调用这个脚本；手动增删改 Release（例如把 harmony.1 标成 prerelease）时由 [`.github/workflows/release_index.yml`](./.github/workflows/release_index.yml)（`release` 事件，也可手动触发）重新生成。`repo` 分支只放这三个自动生成的文件，不要手改。
+6. [`scripts/write-release-index.sh`](./scripts/write-release-index.sh) 把 `GET /repos/<repo>/releases` 全部分页的条目（字段原样，按 `created_at` 倒序取前 30 条；接口本身的顺序不按创建时间）写到孤儿分支 **`repo`** 的 `releases.json`（另附 `latest.json`），应用内更新器（0009 起）优先从 `raw.githubusercontent.com/Xun2202/animeko-harmony/repo/releases.json` 读它。`GITHUB_TOKEN` 创建的 Release 不会触发别的 workflow，所以发版流程自己调用这个脚本；手动增删改 Release（例如把 harmony.1 标成 prerelease）时由 [`.github/workflows/release_index.yml`](./.github/workflows/release_index.yml)（`release` 事件，也可手动触发）重新生成。`repo` 分支只放这三个自动生成的文件，不要手改。
 
 [`.github/workflows/check_patches.yml`](./.github/workflows/check_patches.yml) 在补丁改动时和每周一，把补丁分别试套到官方最新稳定版和 `main`，上游一变就能提前知道要 rebase。
 

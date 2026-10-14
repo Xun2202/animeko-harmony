@@ -142,7 +142,7 @@ rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheServi
 - 镜像文件必须保持是接口原样返回，`GitHubRelease` 用到的字段（`tag_name` / `body` / `published_at` / `draft` / `prerelease` / `assets[].name` / `assets[].browser_download_url`）一个都不能少。
   `prepare-source.sh` 替换 `HARMONY_FORK_REPO` 常量时镜像 URL 会跟着变（它由该常量拼出）。
 
-配套：`scripts/write-release-index.sh` 把 `gh api repos/<repo>/releases?per_page=30` 原样存成 `releases.json`、`jq` 取最新正式版存成 `latest.json`，连同说明 `README.md`
+配套：`scripts/write-release-index.sh` 把 `gh api --paginate repos/<repo>/releases` 的条目按 `created_at` 倒序取前 30 条存成 `releases.json`（字段原样；接口顺序不按创建时间）、`jq` 取最新正式版存成 `latest.json`，连同说明 `README.md`
 提交到孤儿分支 `repo`（被并发推送拒绝就重取重写，最多 3 次）。`harmony_release.yml` 在 `gh release create` 之后调用它（`GITHUB_TOKEN` 创建的 Release 不触发 `release` 事件）；
 `release_index.yml` 在 Release 被手动增删改（含标 prerelease）或手动触发时再跑一遍。`repo` 分支不要手改。CDN 对该文件缓存最多约 5 分钟。
 
@@ -220,6 +220,7 @@ Animeko 的 Gradle 通过环境变量读取签名参数（`build-logic/src/main/
 | 新版本弹窗里按钮看不到 / 被挤出屏幕 | harmony.7 及之前更新说明不可滚动且显示的是整段 Release 正文。升级到 harmony.8；临时办法是直接去 Releases 页下载 APK 覆盖安装 |
 | 窄屏手机上弹窗的「立即更新」被挤成两行 / 更新说明里有 `` ` `` 等符号 | harmony.9 及之前的布局（`Row` 压扁最后一个按钮）。升级到 harmony.10 起的版本；若新布局下按钮仍重叠或被裁掉，发截图并说明屏幕宽度（设置 → 关于 → 分辨率）和系统字体大小 |
 | 更新弹窗只显示「见下方补丁列表。」 | 发版前没在 `patches/CHANGELOG.md` 补 `## harmony.<N>` 小节。补上后下次发版生效；已发布的 Release 可用 `gh release edit --notes-file` 改正文，App 下次检查就会读到 |
+| `repo` 分支 `releases.json` 第一条不是最新版 | GitHub「列出 Releases」接口不按创建时间排序（2026-10-14 mihon-harmony 的 preview.10 排在 6 个旧版之后）。`getHarmonyForkLatestVersion()` 按 `HarmonyForkVersion` 排序取最大，不受影响；但只取第一页 30 条时新版可能被挤出去。`write-release-index.sh` 起翻完所有页、按 `created_at` 倒序取 30 条（与 mihon-harmony / anikku-harmony 同一改动，`0442a45`）。raw CDN 约 5 分钟缓存 |
 
 ## 8. 已知限制与后续方向
 
