@@ -67,7 +67,7 @@
       "state": "uploaded",
       "size": 37153146,
       "digest": "sha256:896e3fae5d6165476bb116ac132b1f1838db4145074c2c640a4687978f7995c4",
-      "download_count": 0,
+      "download_count": 3,
       "created_at": "2026-10-07T03:46:03Z",
       "updated_at": "2026-10-07T03:46:05Z",
       "browser_download_url": "https://github.com/Xun2202/animeko-harmony/releases/download/v6.2.0-harmony.10/ani-6.2.0-harmony.10-arm64-v8a.apk"
@@ -103,7 +103,7 @@
       "state": "uploaded",
       "size": 41,
       "digest": "sha256:9d7a4ad791201f988b1a783351571b2466c26c2870e229dcf10521888ae0d286",
-      "download_count": 0,
+      "download_count": 3,
       "created_at": "2026-10-07T03:46:04Z",
       "updated_at": "2026-10-07T03:46:04Z",
       "browser_download_url": "https://github.com/Xun2202/animeko-harmony/releases/download/v6.2.0-harmony.10/ani-6.2.0-harmony.10-arm64-v8a.apk.sha1"
