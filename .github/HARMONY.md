@@ -18,7 +18,7 @@
 | 项目 | 内容 |
 | --- | --- |
 | 仓库形态 | 不是源码 fork。只有 `patches/`、`scripts/`、workflow 和文档；源码在 Actions 运行时从官方 tag 拉取 |
-| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布的 6.2.0 系列从 `.1` 到 `.10`；最新正式版为 `v6.2.0-harmony.10`。6.3.0 候选 `v6.3.0-harmony.1` 已完成 CI 构建、签名及只读 APK 验证，尚未合并或正式发布；真机后台下载、通知与应用内升级仍待验证。 |
+| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。最新正式版 [`v6.3.0-harmony.1`](https://github.com/Xun2202/animeko-harmony/releases/tag/v6.3.0-harmony.1) 于 2026-10-18 05:54:23 UTC 发布（run `39101365882`）；真机后台下载、通知与应用内升级仍待验证。 |
 | 包名 | `me.him188.ani.harmony`（补丁 0003），桌面名称仍为「Animeko」→ 与官方版 `me.him188.ani` 共存。`harmony.1` 曾用官方包名，被卓易通以签名不匹配拒装 |
 | versionCode | 沿用上游固定值 `android.version.code`（上游刻意不变，方便回退），harmony 版本之间可任意覆盖 |
 | 构建 | `.github/workflows/harmony_release.yml`，ubuntu-24.04，Temurin JDK 21，`assembleDefaultRelease`，只编 `arm64-v8a` |
@@ -28,7 +28,13 @@
 
 ### 6.3.0 适配状态与跨项目取舍
 
-当前维护目标是官方 Animeko 6.3.0，候选 Harmony 版本为 `v6.3.0-harmony.1`。10 张补丁在独立 depth-1 `v6.3.0` 克隆上全部成功套用；26 个改动源码文件与开发树逐字节一致，源码 `git diff --check` 通过。CI dry-run run `39099774585`（源码流水线 SHA `fbb7ccb`）构建成功，未创建 Release 或更新索引；[测试 artifact](https://github.com/Xun2202/animeko-harmony/actions/runs/39099774585/artifacts/12125819999)。只读 APK 验证 run `39100958732`（验证源码 CI SHA `3a9274f`）通过，APK 元数据为包名 `me.him188.ani.harmony`、版本 `6.3.0-harmony.1`、versionCode `50406`、ABI `arm64-v8a`、大小 `37,716,200` 字节。APK SHA-256 为 `11248a711c654f1f844919e8406f735052ff5de44b54e48a5bb815207dbe0ab8`，签名证书 SHA-256 为 `50907c1de76a92991797ed8c5c1feb5df56e180634738b538bddc81735dda10b`。`aapt2`、`apksigner` 完整签名、SHA1 sidecar 与 `apkanalyzer` 均验证通过；静态检查确认 HTTP/PikPak 服务在主进程使用 `mediaPlayback`，BT 两个 API 服务位于 `:torrent_service`。stable 补丁目标通过；可选 `main` 检查仍对 0002 的 `serverUrls` 有预警。候选尚未合并或正式发布，当前正式版为 `v6.2.0-harmony.10`。真机后台 HTTP/PikPak 下载与通知/暂停仍待测；6.2 到 6.3 的应用内更新要等正式 Release 后验证。
+当前正式目标为官方 Animeko 6.3.0，Release `v6.3.0-harmony.1` 已发布（run `39101365882`，发布时间 2026-10-18 05:54:23 UTC，target `03cc22ab5fbad1ad7529bdd56aa10ba4fccc3e0b`，非 draft/prerelease）。正式资产为 [`ani-6.3.0-harmony.1-arm64-v8a.apk`](https://github.com/Xun2202/animeko-harmony/releases/download/v6.3.0-harmony.1/ani-6.3.0-harmony.1-arm64-v8a.apk)，37,716,356 字节；SHA-256 `bd52eebf4b5d2b28e330be6156ae767ecc36a6e4db6c2aac249a6380bf38eff8`，SHA-1 `3123494021ad19320de13376e2e0467a1db0ad42`。包名 `me.him188.ani.harmony`，versionName `6.3.0-harmony.1`，versionCode `50406`，min/target SDK `27/37`，ABI `arm64-v8a`；证书 SHA-256 `50907c1de76a92991797ed8c5c1feb5df56e180634738b538bddc81735dda10b`。APK 的 SHA-256/SHA-1 与 Release digest/sidecar 一致。
+
+CI 验证 run `39102186677` 成功，artifact 检查与 latest stable 补丁检查通过，可选 `main` 检查仍对 0002 的 `serverUrls` 有预警。Release 索引分支提交为 `ead22f58f9c1d55ab8b3690523ef20f73d61decb`；raw 索引首项为新版本，共 11 条。本地 Release APK 验证中，`aapt2`、`verify_apk.py`、`apksigner verify` 均通过；DEX 包含静音保活、HTTP/PikPak 服务控制和更新镜像实现，CI manifest 类型/进程检查通过。PR #1 已合并。早期 dry-run 候选构建记录见 [run 39099774585](https://github.com/Xun2202/animeko-harmony/actions/runs/39099774585)；它是独立测试产物，大小和哈希均与本次正式 Release APK 不同，不要混用验证结果。
+
+Release run 成功但有非阻塞 runner annotations：`checkout@v4`、`setup-java@v4`、`upload-artifact@v4` 和 `gradle/actions/setup-gradle@v4` 中的 Node 20 已被 runner 强制使用 Node 24，且 `setup-java@v4` 已 deprecated 并建议升级到 v5。本轮 workflow 未改；后续维护可统一升级 Actions 版本。
+
+当前仅待真机验证：HTTP/PikPak 后台下载、通知/暂停/完成后服务释放；应用内从 6.2 升级到 6.3 需在已发布版本上验证。
 
 这次没有移植 Mihon / Anikku 的全景瀑布流改动：Animeko 使用普通 `LazyVerticalGrid`，没有 `PanoramaMasonry`、比例占位重排或全景自动列的对应实现，因此精确 delta、封面尺寸预读和全景自动列方案不适用。性能记录器是可泛用思路，但目前没有已知 Animeko 需求，本次不加。
 
@@ -202,7 +208,7 @@ Animeko 的 Gradle 通过环境变量读取签名参数（`build-logic/src/main/
      （需要 `local.properties` 里有 `sdk.dir`；如果本机 JDK 不是 JetBrains Runtime，再加一行 `jvm.toolchain.vendor=<本机 java.vendor 的子串>`，如 `adoptium`、`ubuntu`）
 3. `git add -A && git commit`，保留原来的提交说明（`git commit -c <旧补丁里的 From 提交>` 或直接复制标题/正文）。
 4. `git format-patch -1 HEAD -o /tmp/out`，把生成的文件覆盖到 `patches/` 对应文件名（文件名保持不变，`series` 不用改）。
-5. 本轮 6.3.0 的 10 张补丁已在独立 depth-1 `v6.3.0` 克隆上成功套用，26 个改动源码文件与开发树逐字节一致；dry-run 构建与只读 APK 验证均通过。此候选尚未合并或正式发布；真机验证与正式发版仍按计划进行。后续补丁更新推到 `main`，由 `check_patches.yml` 验证后手动或等定时任务出包。
+5. 本轮 6.3.0 的 10 张补丁已在独立 depth-1 `v6.3.0` 克隆上成功套用，26 个改动源码文件与开发树逐字节一致；正式 Release `v6.3.0-harmony.1` 已发布并通过 CI/本地 APK 验证。后续补丁更新推到 `main`，由 `check_patches.yml` 验证后手动或等定时任务出包。
 
 `check_patches.yml` 的 stable 补丁目标已通过；可选 `main` 目标仍对 0002 的 `serverUrls` 有预警，记录并按后续上游变化复核。
 
@@ -225,7 +231,7 @@ Animeko 的 Gradle 通过环境变量读取签名参数（`build-logic/src/main/
 | 关了「自动检查更新」后点「检查更新」只闪一下、没反应 | harmony.7 及之前的上游行为（手动检查也受该开关控制）。升级到 harmony.8；或先打开自动检查再点 |
 | 新版本弹窗里按钮看不到 / 被挤出屏幕 | harmony.7 及之前更新说明不可滚动且显示的是整段 Release 正文。升级到 harmony.8；临时办法是直接去 Releases 页下载 APK 覆盖安装 |
 | 窄屏手机上弹窗的「立即更新」被挤成两行 / 更新说明里有 `` ` `` 等符号 | harmony.9 及之前的布局（`Row` 压扁最后一个按钮）。升级到 harmony.10 起的版本；若新布局下按钮仍重叠或被裁掉，发截图并说明屏幕宽度（设置 → 关于 → 分辨率）和系统字体大小 |
-| 更新弹窗只显示「见下方补丁列表。」 | 发版前没在 `patches/CHANGELOG.md` 补 `## harmony.<N>` 小节。补上后下次发版生效；已发布的 Release 可用 `gh release edit --notes-file` 改正文，App 下次检查就会读到 |
+| 更新弹窗只显示「见下方补丁列表。」 | 发版前没在 `patches/CHANGELOG.md` 加与 `HARMONY_VERSION` 完整一致的标题（如 `## 6.3.0-harmony.1`）。补上后下次发版生效；已发布的 Release 可用 `gh release edit --notes-file` 改正文，App 下次检查就会读到 |
 | `repo` 分支 `releases.json` 第一条不是最新版 | GitHub「列出 Releases」接口不按创建时间排序（2026-10-14 mihon-harmony 的 preview.10 排在 6 个旧版之后）。`getHarmonyForkLatestVersion()` 按 `HarmonyForkVersion` 排序取最大，不受影响；但只取第一页 30 条时新版可能被挤出去。`write-release-index.sh` 起翻完所有页、按 `created_at` 倒序取 30 条（与 mihon-harmony / anikku-harmony 同一改动，`0442a45`）。raw CDN 约 5 分钟缓存 |
 
 ## 8. 已知限制与后续方向

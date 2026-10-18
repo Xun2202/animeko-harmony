@@ -5,7 +5,7 @@
 > 每天检查 Animeko 官方最新稳定版，拉取官方源码、套用 [`patches/`](./patches) 下的补丁、编译签名 APK，发布到本仓库的
 > [Releases](../../releases)。tag 形如 `v6.2.0-harmony.1`。
 >
-> **当前状态（2026-10-18）**：最新正式版仍是 `v6.2.0-harmony.10`。6.3.0 候选 `v6.3.0-harmony.1` 已由 CI 构建、签名并通过APK 核验；它仍是测试产物，尚未合并或正式发布。可查看 [CI 测试包](https://github.com/Xun2202/animeko-harmony/actions/runs/39099774585/artifacts/12125819999) 与 [PR #1](https://github.com/Xun2202/animeko-harmony/pull/1)。真机后台 HTTP/PikPak 下载与通知/暂停，以及正式发布后的应用内更新仍待验证。
+> **当前状态（2026-10-18）**：最新正式版为 [`v6.3.0-harmony.1`](https://github.com/Xun2202/animeko-harmony/releases/tag/v6.3.0-harmony.1)，已于 05:54 UTC 发布。可在 [Releases](../../releases) 下载 APK；应用内更新路径是「设置 → 软件更新 → 检查更新」，再点「查看 → 立即更新」，下载完成后点「重启更新」。真机后台 HTTP/PikPak 下载与通知/暂停，以及应用内从 6.2 升级到 6.3 仍待验证。
 >
 > 目标是改善 Animeko 在 HarmonyOS 卓易通（Android 兼容容器）中的可用性。本项目不隶属于、也不受 OpenAni 官方支持；
 > 与本构建相关的问题请提到本仓库，不要向 Animeko 上游反馈。本构建沿用上游的 [AGPL-3.0](https://github.com/open-ani/animeko/blob/main/LICENSE.txt) 许可，
@@ -74,7 +74,7 @@
 
 ## 当前适配状态
 
-6.3.0 候选 `v6.3.0-harmony.1` 的 10 张补丁已在独立源码树成功套用，CI 构建、签名与APK 核验均通过。测试包见上方 Actions artifact；PR #1 尚未合并，正式版仍为 `v6.2.0-harmony.10`。真机后台 HTTP/PikPak 下载、通知/暂停及正式发布后的应用内升级仍待验证。
+6.3.0 正式版 `v6.3.0-harmony.1` 已发布；真机后台 HTTP/PikPak 下载、通知/暂停和从 6.2 升级仍待验证。此前 dry-run 测试包仅用于候选构建验证，不是正式 Release APK。
 
 本轮没有移植 Mihon / Anikku 的全景瀑布流改动：Animeko 普通列表使用 `LazyVerticalGrid`，没有对应的 `PanoramaMasonry`、比例占位重排或全景自动列实现；精确 delta、封面尺寸预读与全景自动列方案不适用。性能记录器虽可泛用，目前没有已知 Animeko 需求，因此不加入本轮。
 
@@ -91,7 +91,7 @@
 2. `git clone --depth 1 --branch <tag>` 官方源码（Android 端的 anitorrent 原生库来自 Maven，无需 boost 子模块）。
 3. [`scripts/prepare-source.sh`](./scripts/prepare-source.sh)：按 `series` 顺序 `git apply --3way` 补丁、把更新器指向当前仓库、改写 `gradle.properties` 的 `version.name` / `package.version`，每一步各提交一次。
 4. Temurin JDK 21 + `./gradlew assembleDefaultRelease`（`ani.android.abis=arm64-v8a`），签名密钥来自仓库 Secrets。
-5. 产物重命名为 `ani-<版本>-arm64-v8a.apk`，附 `.sha1`，上传为 Actions artifact 并 `gh release create`。Release 正文的「本次变更」取自 [`patches/CHANGELOG.md`](./patches/CHANGELOG.md) 里 `## harmony.<N>` 小节（应用内更新弹窗只显示这一节），**发版前先在那里补一节**。
+5. 产物重命名为 `ani-<版本>-arm64-v8a.apk`，附 `.sha1`，上传为 Actions artifact 并 `gh release create`。Release 正文的「本次变更」取自 [`patches/CHANGELOG.md`](./patches/CHANGELOG.md) 中与完整 `HARMONY_VERSION` 一致的标题（例如 `## 6.3.0-harmony.1`；应用内更新弹窗只显示这一节），**发版前先在那里补一节**。
 6. [`scripts/write-release-index.sh`](./scripts/write-release-index.sh) 把 `GET /repos/<repo>/releases` 全部分页的条目（字段原样，按 `created_at` 倒序取前 30 条；接口本身的顺序不按创建时间）写到孤儿分支 **`repo`** 的 `releases.json`（另附 `latest.json`），应用内更新器（0009 起）优先从 `raw.githubusercontent.com/Xun2202/animeko-harmony/repo/releases.json` 读它。`GITHUB_TOKEN` 创建的 Release 不会触发别的 workflow，所以发版流程自己调用这个脚本；手动增删改 Release（例如把 harmony.1 标成 prerelease）时由 [`.github/workflows/release_index.yml`](./.github/workflows/release_index.yml)（`release` 事件，也可手动触发）重新生成。`repo` 分支只放这三个自动生成的文件，不要手改。
 
 [`.github/workflows/check_patches.yml`](./.github/workflows/check_patches.yml) 在补丁改动时和每周一，把补丁分别试套到官方最新稳定版和 `main`，上游一变就能提前知道要 rebase。
@@ -115,8 +115,8 @@
 ## 本地复现构建
 
 ```bash
-git clone --depth 1 --branch v6.2.0 https://github.com/open-ani/animeko.git /tmp/animeko
-scripts/prepare-source.sh /tmp/animeko v6.2.0 1
+git clone --depth 1 --branch v6.3.0 https://github.com/open-ani/animeko.git /tmp/animeko
+scripts/prepare-source.sh /tmp/animeko v6.3.0 1
 cd /tmp/animeko
 cat > local.properties <<EOF
 sdk.dir=$ANDROID_HOME
