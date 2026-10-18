@@ -5,7 +5,7 @@
 > 每天检查 Animeko 官方最新稳定版，拉取官方源码、套用 [`patches/`](./patches) 下的补丁、编译签名 APK，发布到本仓库的
 > [Releases](../../releases)。tag 形如 `v6.2.0-harmony.1`。
 >
-> **当前状态（2026-10-18）**：最新可安装 Release 是 `v6.2.0-harmony.10`。Animeko 6.3.0 的 10 张补丁已在独立 depth-1 `v6.3.0` 克隆上全部成功套用；26 个改动源码文件与开发树逐字节一致，源码 `git diff --check` 通过。候选版本为 `v6.3.0-harmony.1`，现在待 CI 构建；目前没有 6.3.0 Harmony Release，也没有可供安装的 6.3.0 APK。真机后台下载、通知和 PikPak 缓存行为仍待验证。
+> **当前状态（2026-10-18）**：最新正式版仍是 `v6.2.0-harmony.10`。6.3.0 候选 `v6.3.0-harmony.1` 已由 CI 构建、签名并通过APK 核验；它仍是测试产物，尚未合并或正式发布。可查看 [CI 测试包](https://github.com/Xun2202/animeko-harmony/actions/runs/39099774585/artifacts/12125819999) 与 [PR #1](https://github.com/Xun2202/animeko-harmony/pull/1)。真机后台 HTTP/PikPak 下载与通知/暂停，以及正式发布后的应用内更新仍待验证。
 >
 > 目标是改善 Animeko 在 HarmonyOS 卓易通（Android 兼容容器）中的可用性。本项目不隶属于、也不受 OpenAni 官方支持；
 > 与本构建相关的问题请提到本仓库，不要向 Animeko 上游反馈。本构建沿用上游的 [AGPL-3.0](https://github.com/open-ani/animeko/blob/main/LICENSE.txt) 许可，
@@ -74,7 +74,7 @@
 
 ## 当前适配状态
 
-6.3.0 适配的补丁源码已在独立分支 `codex/animeko-6.3-compat` 上准备，候选版本号为 `v6.3.0-harmony.1`。10 张补丁已在独立 depth-1 `v6.3.0` 克隆上全部成功套用，26 个改动源码文件与开发树逐字节一致且源码 `git diff --check` 通过；这不代表 CI 构建成功、APK 已构建，或 Release 已发布。最新可安装版本仍为 `v6.2.0-harmony.10`。待 CI 和真机验证完成后再更新此状态。
+6.3.0 候选 `v6.3.0-harmony.1` 的 10 张补丁已在独立源码树成功套用，CI 构建、签名与APK 核验均通过。测试包见上方 Actions artifact；PR #1 尚未合并，正式版仍为 `v6.2.0-harmony.10`。真机后台 HTTP/PikPak 下载、通知/暂停及正式发布后的应用内升级仍待验证。
 
 本轮没有移植 Mihon / Anikku 的全景瀑布流改动：Animeko 普通列表使用 `LazyVerticalGrid`，没有对应的 `PanoramaMasonry`、比例占位重排或全景自动列实现；精确 delta、封面尺寸预读与全景自动列方案不适用。性能记录器虽可泛用，目前没有已知 Animeko 需求，因此不加入本轮。
 
