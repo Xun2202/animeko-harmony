@@ -1,39 +1,36 @@
-From be2643236d1ff5d56e840c7be06d5e7ce95cacdc Mon Sep 17 00:00:00 2001
-From: Xun2202 <xun2202@users.noreply.github.com>
-Date: Fri, 2 Oct 2026 07:06:33 +0000
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Xun2202 <98207886+Xun2202@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 04:55:21 +0000
 Subject: [PATCH] android: play a silent audio loop while web-source caches
  download
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-On HarmonyOS 卓易通 the app process is suspended within seconds of
-leaving the foreground even with a dataSync foreground service, a partial
-wake lock and a battery-optimisation exemption (6.2.0-harmony.5 log:
-last progress 14:55:44, requests thawed and timed out at 14:58:51 when
-the user reopened the app). Audio output is what the host keeps running,
-so HttpCacheService becomes a mediaPlayback service and loops a silent
-MODE_STATIC AudioTrack for its lifetime. No audio focus is requested, so
-other apps' playback is unaffected; the loop is driven by the audio HAL
-and costs no CPU. The environment (Build fields, cgroup) is logged once
-per start to tell compatibility layers apart in bug reports.
-
-Also dedupe the controller's start requests, which fired three times per
-download start because several upstream flows emit before isRunning flips.
+Rebased for Animeko v6.3.0 while retaining the existing Harmony behavior.
+Keep the upstream PikPak lifecycle and add the same Harmony silent-audio, wake-lock and battery-exemption support used for HTTP downloads.
 ---
- app/android/src/default/AndroidManifest.xml   |  2 +-
- .../torrent/service/HttpCacheService.kt       |  8 ++
- .../service/HttpCacheServiceController.kt     | 10 +-
- .../torrent/service/SilentAudioKeepAlive.kt   | 93 +++++++++++++++++++
- 4 files changed, 111 insertions(+), 2 deletions(-)
+ app/android/src/default/AndroidManifest.xml   |   4 +-
+ .../torrent/service/HttpCacheService.kt       |   8 ++
+ .../service/HttpCacheServiceController.kt     |  10 +-
+ .../torrent/service/PikPakCacheService.kt     |  22 +++
+ .../service/PikPakCacheServiceController.kt   |   7 +-
+ .../torrent/service/SilentAudioKeepAlive.kt   | 126 ++++++++++++++++++
+ 6 files changed, 173 insertions(+), 4 deletions(-)
  create mode 100644 app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/SilentAudioKeepAlive.kt
 
 diff --git a/app/android/src/default/AndroidManifest.xml b/app/android/src/default/AndroidManifest.xml
-index 731e431..8f87d04 100644
+index 4b52992d2..2867bb597 100644
 --- a/app/android/src/default/AndroidManifest.xml
 +++ b/app/android/src/default/AndroidManifest.xml
-@@ -102,7 +102,7 @@
+@@ -103,7 +103,7 @@
                  android:name="me.him188.ani.app.domain.torrent.service.HttpCacheService"
+                 android:enabled="true"
+                 android:exported="false"
+-                android:foregroundServiceType="dataSync" />
++                android:foregroundServiceType="mediaPlayback" />
+ 
+         <!-- No android:process: the PikPak engine runs in the app process and this service exists
+              to keep that process running. -->
+@@ -111,7 +111,7 @@
+                 android:name="me.him188.ani.app.domain.torrent.service.PikPakCacheService"
                  android:enabled="true"
                  android:exported="false"
 -                android:foregroundServiceType="dataSync" />
@@ -42,7 +39,7 @@ index 731e431..8f87d04 100644
      </application>
  </manifest>
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
-index 19939e1..1c5e5fd 100644
+index 3945ef970..9ac33cf69 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
 @@ -39,6 +39,10 @@ import org.koin.core.component.inject
@@ -81,7 +78,7 @@ index 19939e1..1c5e5fd 100644
          super.onDestroy()
      }
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
-index 9062d87..f73a721 100644
+index ed0f0cd68..1993b219b 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
 @@ -39,6 +39,11 @@ class HttpCacheServiceController(
@@ -109,12 +106,88 @@ index 9062d87..f73a721 100644
                              startService()
                              // Only while the user is looking at the app: the system dialog would be
                              // swallowed (or counted as a background activity start) otherwise.
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheService.kt
+index c1e688786..766fd04eb 100644
+--- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheService.kt
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheService.kt
+@@ -9,8 +9,11 @@
+ 
+ package me.him188.ani.app.domain.torrent.service
+ 
++import android.annotation.SuppressLint
++import android.content.Context
+ import android.content.Intent
+ import android.graphics.drawable.Icon
++import android.os.PowerManager
+ import androidx.lifecycle.LifecycleService
+ import androidx.lifecycle.lifecycleScope
+ import kotlinx.coroutines.flow.Flow
+@@ -43,6 +46,11 @@ import org.koin.core.component.inject
+  */
+ class PikPakCacheService : LifecycleService(), KoinComponent {
+     private val logger = logger<PikPakCacheService>()
++    private val silentAudio = SilentAudioKeepAlive()
++    private val wakeLock by lazy {
++        (getSystemService(Context.POWER_SERVICE) as PowerManager)
++            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Animeko:PikPakCacheService")
++    }
+ 
+     private val downloadManager: MediaDownloadManager by inject()
+     private val downloadOperations: DownloadOperations by inject()
+@@ -114,15 +122,29 @@ class PikPakCacheService : LifecycleService(), KoinComponent {
+             return START_NOT_STICKY
+         }
+ 
++        acquireWakeLock()
++        silentAudio.start()
+         isRunning.value = true
+         return START_STICKY
+     }
+ 
+     override fun onDestroy() {
+         isRunning.value = false
++        silentAudio.stop()
++        releaseWakeLock()
+         super.onDestroy()
+     }
+ 
++    @SuppressLint("WakelockTimeout")
++    private fun acquireWakeLock() {
++        runCatching { if (!wakeLock.isHeld) wakeLock.acquire() }
++            .onFailure { logger.info { "Failed to acquire wake lock: $it" } }
++    }
++
++    private fun releaseWakeLock() {
++        runCatching { if (wakeLock.isHeld) wakeLock.release() }
++    }
++
+     private fun pauseAllDownloads() {
+         val ids = downloadManager.downloads.value
+             .filter { it.engineKey == MediaCacheEngineKey.PikPak }
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheServiceController.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheServiceController.kt
+index 0d65a1868..6cde71be2 100644
+--- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheServiceController.kt
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheServiceController.kt
+@@ -61,7 +61,12 @@ class PikPakCacheServiceController(
+                         return@onEach
+                     }
+                     when {
+-                        shouldRun && !serviceRunning -> startService()
++                        shouldRun && !serviceRunning -> {
++                            startService()
++                            if (processState.isAtLeast(Lifecycle.State.RESUMED)) {
++                                BatteryOptimizationExemption.requestOnce(context)
++                            }
++                        }
+                         !shouldRun && serviceRunning -> stopService()
+                     }
+                 }
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/SilentAudioKeepAlive.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/SilentAudioKeepAlive.kt
 new file mode 100644
-index 0000000..a75fa0f
+index 000000000..e2a98edb8
 --- /dev/null
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/SilentAudioKeepAlive.kt
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,126 @@
 +/*
 + * Copyright (C) 2024-2026 OpenAni and contributors.
 + *
@@ -130,6 +203,7 @@ index 0000000..a75fa0f
 +import android.media.AudioFormat
 +import android.media.AudioTrack
 +import android.os.Build
++import kotlinx.coroutines.CancellationException
 +import me.him188.ani.utils.logging.info
 +import me.him188.ani.utils.logging.logger
 +import me.him188.ani.utils.logging.warn
@@ -151,10 +225,12 @@ index 0000000..a75fa0f
 +
 +    fun start() {
 +        if (track != null) return
++        var newTrack: AudioTrack? = null
 +        try {
 +            val minBuffer = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL, ENCODING)
++            check(minBuffer > 0) { "AudioTrack returned invalid minimum buffer size: $minBuffer" }
 +            val bufferSize = maxOf(minBuffer, SAMPLE_RATE * BYTES_PER_FRAME) // >= 1 second
-+            val newTrack = AudioTrack.Builder()
++            val builtTrack = AudioTrack.Builder()
 +                .setAudioAttributes(
 +                    AudioAttributes.Builder()
 +                        .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -171,13 +247,22 @@ index 0000000..a75fa0f
 +                .setBufferSizeInBytes(bufferSize)
 +                .setTransferMode(AudioTrack.MODE_STATIC)
 +                .build()
++            newTrack = builtTrack
++
 +            val silence = ByteArray(bufferSize)
-+            newTrack.write(silence, 0, silence.size)
-+            newTrack.setLoopPoints(0, bufferSize / BYTES_PER_FRAME, -1)
-+            newTrack.play()
-+            track = newTrack
++            val bytesWritten = builtTrack.write(silence, 0, silence.size)
++            check(bytesWritten == silence.size) { "AudioTrack wrote $bytesWritten of ${silence.size} silent bytes" }
++            check(builtTrack.state == AudioTrack.STATE_INITIALIZED) { "AudioTrack was not initialized after writing static data" }
++            val loopResult = builtTrack.setLoopPoints(0, bufferSize / BYTES_PER_FRAME, -1)
++            check(loopResult == AudioTrack.SUCCESS) { "AudioTrack.setLoopPoints failed: $loopResult" }
++            builtTrack.play()
 +            logger.info { "Silent audio keep-alive started. ${describeEnvironment()}" }
++            track = builtTrack
++        } catch (e: CancellationException) {
++            newTrack?.releaseAfterFailedStart()
++            throw e
 +        } catch (e: Exception) {
++            newTrack?.releaseAfterFailedStart()
 +            logger.warn { "Failed to start silent audio keep-alive: $e" }
 +        }
 +    }
@@ -185,11 +270,32 @@ index 0000000..a75fa0f
 +    fun stop() {
 +        val current = track ?: return
 +        track = null
-+        runCatching {
++        try {
 +            current.stop()
-+            current.release()
++        } catch (e: CancellationException) {
++            throw e
++        } catch (e: Exception) {
++            logger.warn { "Failed to stop silent audio keep-alive: $e" }
++        } finally {
++            try {
++                current.release()
++            } catch (e: CancellationException) {
++                throw e
++            } catch (e: Exception) {
++                logger.warn { "Failed to release silent audio keep-alive: $e" }
++            }
 +        }
 +        logger.info { "Silent audio keep-alive stopped." }
++    }
++
++    private fun AudioTrack.releaseAfterFailedStart() {
++        try {
++            release()
++        } catch (e: CancellationException) {
++            throw e
++        } catch (e: Exception) {
++            logger.warn { "Failed to release partially initialized silent AudioTrack: $e" }
++        }
 +    }
 +
 +    /**
@@ -208,6 +314,3 @@ index 0000000..a75fa0f
 +        const val BYTES_PER_FRAME = 2
 +    }
 +}
--- 
-2.43.0
-

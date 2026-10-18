@@ -18,13 +18,19 @@
 | 项目 | 内容 |
 | --- | --- |
 | 仓库形态 | 不是源码 fork。只有 `patches/`、`scripts/`、workflow 和文档；源码在 Actions 运行时从官方 tag 拉取 |
-| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布：`v6.2.0-harmony.1`（官方包名，装不上，已标为 prerelease 并加警告）、`v6.2.0-harmony.2`（应用名曾改为 Animeko Harmony）、`v6.2.0-harmony.3`（独立包名，可装，但在线源缓存退后台会停）、`v6.2.0-harmony.4`（在线源缓存有前台服务，但仍被冻结）、`v6.2.0-harmony.5`（加电池豁免 + WakeLock，仍被冻结）、`v6.2.0-harmony.6`（2026-10-02，静音音轨保活；2026-10-06 用户真机确认有效）、`v6.2.0-harmony.7`（2026-10-06，下载通知加进度 + 当前项，与 Mihon / Anikku 鸿蒙版统一）、`v6.2.0-harmony.8`（2026-10-06，应用内更新：关自动检查后仍可手动检查、弹窗可滚动、只显示「本次变更」、启动删已装安装包） |
+| 产物 | 每个官方稳定版一个 Release，tag `v<版本>-harmony.<N>`，文件 `ani-<版本>-harmony.<N>-arm64-v8a.apk` + `.sha1`。已发布的 6.2.0 系列从 `.1` 到 `.10`；最新正式版为 `v6.2.0-harmony.10`。6.3.0 候选 `v6.3.0-harmony.1` 已完成 CI 构建、签名及只读 APK 验证，尚未合并或正式发布；真机后台下载、通知与应用内升级仍待验证。 |
 | 包名 | `me.him188.ani.harmony`（补丁 0003），桌面名称仍为「Animeko」→ 与官方版 `me.him188.ani` 共存。`harmony.1` 曾用官方包名，被卓易通以签名不匹配拒装 |
 | versionCode | 沿用上游固定值 `android.version.code`（上游刻意不变，方便回退），harmony 版本之间可任意覆盖 |
 | 构建 | `.github/workflows/harmony_release.yml`，ubuntu-24.04，Temurin JDK 21，`assembleDefaultRelease`，只编 `arm64-v8a` |
 | 触发 | 每天 UTC 03:23 定时（只会发 `harmony.1`，补丁号默认 1）+ 手动 `workflow_dispatch`（`dry_run` 勾上则只编译、传 artifact，不发 Release） |
 | 补丁健康检查 | `.github/workflows/check_patches.yml`：补丁改动时 + 每周一，试套官方最新稳定版（必须成功）和 `main`（只警告） |
 | 应用内更新 | 补丁 0002 把更新源改为本仓库 Releases；0008 修手动检查 / 弹窗 / 更新说明来源（`patches/CHANGELOG.md` → Release 正文「本次变更」）；0010 弹窗按钮在窄屏上整体换行、更新说明去掉 Markdown 标记（harmony.10）；0009 先读 `repo` 分支的 `releases.json` 镜像再退回 `api.github.com`（匿名接口每 IP 每小时 60 次配额） |
+
+### 6.3.0 适配状态与跨项目取舍
+
+当前维护目标是官方 Animeko 6.3.0，候选 Harmony 版本为 `v6.3.0-harmony.1`。10 张补丁在独立 depth-1 `v6.3.0` 克隆上全部成功套用；26 个改动源码文件与开发树逐字节一致，源码 `git diff --check` 通过。CI dry-run run `39099774585`（源码流水线 SHA `fbb7ccb`）构建成功，未创建 Release 或更新索引；[测试 artifact](https://github.com/Xun2202/animeko-harmony/actions/runs/39099774585/artifacts/12125819999)。只读 APK 验证 run `39100958732`（验证源码 CI SHA `3a9274f`）通过，APK 元数据为包名 `me.him188.ani.harmony`、版本 `6.3.0-harmony.1`、versionCode `50406`、ABI `arm64-v8a`、大小 `37,716,200` 字节。APK SHA-256 为 `11248a711c654f1f844919e8406f735052ff5de44b54e48a5bb815207dbe0ab8`，签名证书 SHA-256 为 `50907c1de76a92991797ed8c5c1feb5df56e180634738b538bddc81735dda10b`。`aapt2`、`apksigner` 完整签名、SHA1 sidecar 与 `apkanalyzer` 均验证通过；静态检查确认 HTTP/PikPak 服务在主进程使用 `mediaPlayback`，BT 两个 API 服务位于 `:torrent_service`。stable 补丁目标通过；可选 `main` 检查仍对 0002 的 `serverUrls` 有预警。候选尚未合并或正式发布，当前正式版为 `v6.2.0-harmony.10`。真机后台 HTTP/PikPak 下载与通知/暂停仍待测；6.2 到 6.3 的应用内更新要等正式 Release 后验证。
+
+这次没有移植 Mihon / Anikku 的全景瀑布流改动：Animeko 使用普通 `LazyVerticalGrid`，没有 `PanoramaMasonry`、比例占位重排或全景自动列的对应实现，因此精确 delta、封面尺寸预读和全景自动列方案不适用。性能记录器是可泛用思路，但目前没有已知 Animeko 需求，本次不加。
 
 ## 3. 目录结构
 
@@ -41,12 +47,13 @@ patches/
   0008-update-manual-check-and-popup-fixes.patch
   0009-update-release-mirror.patch
   0010-update-popup-narrow-screen-and-plain-changelog.patch
-  CHANGELOG.md                             # 每个 harmony.N 一节, 发版时写进 Release 正文「本次变更」, 应用内更新弹窗只显示这一节
+  CHANGELOG.md                             # 按完整 Harmony 版本号分节, 发版时写进 Release 正文「本次变更」, 应用内更新弹窗只显示这一节
 scripts/prepare-source.sh                  # 套补丁 + 改更新器仓库名 + 改版本号, workflow 和本地都用它
+scripts/verify-apk.sh                      # 只读验证既有 CI APK 的元数据、签名、摘要与指定包内实现
 scripts/write-release-index.sh             # Releases 接口返回 → repo 分支的 releases.json / latest.json
-.github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release → 写 Release 索引 (dry_run 只到编译为止)
+.github/workflows/harmony_release.yml      # 定时/手动: 拉源码 → 套补丁 → 编译签名 → 发 Release → 写 Release 索引 (dry_run 上传 artifact, 跳过 Release/索引)
 .github/workflows/release_index.yml        # Release 被手动增删改时重写索引 (也可手动触发)
-.github/workflows/check_patches.yml        # 补丁能否套到上游最新稳定版 / main
+.github/workflows/check_patches.yml        # 补丁能否套到上游最新稳定版 / main；可选按 artifact_run_id + harmony_version 只读验证既有 CI APK
 docs/ANALYSIS.md                           # 问题分析与真机取证方法
 ```
 
@@ -58,7 +65,7 @@ docs/ANALYSIS.md                           # 问题分析与真机取证方法
 - `AniTorrentService.kt`：前台启动被拒时 `stopSelf()`。
 - `AniTorrentServiceStarter.kt`：等待启动广播 15 秒超时。
 
-**基于 `v6.2.0` 生成。** 官方 `main`（6.2.0 之后）重构了 `ServiceNotification`：构造参数增加了 `notificationId`/`channelId`/`buildStopServiceIntent`（给新增的 `PikPakCacheService` 共用），常量改名 `TORRENT_NOTIFICATION_ID`。下一个稳定版发布时这个补丁**必然要 rebase**，做法见 §6。`main` 上对应的改法只是把 `NOTIFICATION_ID` → `notificationId`、`NOTIFICATION_CHANNEL_ID` → `channelId`。
+**历史基线是 `v6.2.0`。** 直接套用到 6.3.0 会失败：`ServiceNotification` 构造参数已改造，上游又新增了 PikPak 共享服务。失败不代表鸿蒙侧的通知根因消失；上游仍依赖 `activeNotifications` 判断。适配时需在新 API/服务结构上重新落实每次启动均调用 `startForeground()`，并保留 BT 独立服务原有策略。具体以当前 6.3.0 适配代码为准；后续 rebase 也应先核对上游实现，避免复用旧上下文。
 
 ### 0002 应用内更新（`app/shared/ui-settings/.../ui/update/`）
 
@@ -89,12 +96,12 @@ rebase 时留意：上游如果把 `applicationId` 挪到 `gradle.properties` �
 
 为什么必须有这个补丁：在线源缓存由 `KtorHttpDownloader` 在主进程下载，上游没有为它做前台服务（BT 服务在 `:torrent_service` 进程，保护不到主进程）。真机日志（6.2.0-harmony.3）显示：12:35:49 退后台后所有分片请求瞬间停止，12:57:38 回到前台才以 `Socket timeout` 失败并重试——整整 22 分钟进程被冻结。这也是用户反馈「没有通知、流量归零」的真正原因；补丁 0001 针对的 BT 路径在那次测试里根本没走到。
 
-rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheService`（过滤 `engineKey == PikPak`），并且 `ServiceNotification` 的重构与本补丁相同。下个稳定版 rebase 时：`ServiceNotification` 部分直接丢弃（上游已有）；`HttpCacheService` 的 `isInProcess()` 要改成 `!= Anitorrent && != PikPak`，避免两个服务同时为 PikPak 缓存挂通知。更干净的做法是把上游 `PikPakCacheService` 泛化成覆盖全部进程内引擎，然后给上游提 PR。
+6.3.0 上游已提供 `PikPakCacheService`，它管理自己的 PikPak 任务、独立通知 ID 115、超时/重试与暂停逻辑。当前补丁只让 `HttpCacheService` 管理 WebM3u（HTTP 服务 ID 116；BT 仍为 114），不要把 PikPak 再纳入 HTTP 服务或改写官方 controller。后续 rebase 要重新检查引擎 key、通知 ID 和暂停/重试路径，避免 PikPak 双重通知或覆盖上游语义。
 
 ### 0005 电池优化豁免 + WakeLock
 
 - 新增 `BatteryOptimizationExemption`：`isGranted()` 查 `PowerManager.isIgnoringBatteryOptimizations`；`requestOnce()` 发 `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`，每个进程生命周期最多弹一次，已授权不弹。`HttpCacheServiceController` 在拉起服务且进程处于 RESUMED 时调用。
-- `HttpCacheService` 在 `startForeground` 成功后持有 `PARTIAL_WAKE_LOCK`，`onDestroy` 释放。
+- HTTP 缓存的 `HttpCacheService` 在 `startForeground` 成功后持有 `PARTIAL_WAKE_LOCK`，`onDestroy` 释放；0005 的电池优化豁免与 WakeLock 仅针对 HTTP 缓存。
 - manifest 增加 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`。
 
 为什么：harmony.4 的截图显示通知出来了但 2 分钟后仍停在旧值，进程还是被冻结；同机的 FlClash 一直在跑。FlClash 的差异是 VPN（容器把它映射为系统 VPN，天然豁免）+ 申请了电池优化豁免 + 用户给它开了后台活动。VPN 学不了，后两项学了。实测这两项也不够，见 0006。
@@ -102,7 +109,7 @@ rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheServi
 ### 0006 静音音轨保活
 
 - 新增 `SilentAudioKeepAlive`：8 kHz 单声道 16-bit 的 1 秒静音 buffer，`AudioTrack.MODE_STATIC` + `setLoopPoints(…, -1)` 无限循环，由音频 HAL 驱动，不占 CPU；`USAGE_MEDIA`，**不申请音频焦点**。`start()` 时打一行环境信息（`Build.MANUFACTURER/BRAND/MODEL/DEVICE`、SDK、`/proc/self/cgroup` 首行），用于从日志识别卓易通。
-- `HttpCacheService` manifest 类型 `dataSync` → `mediaPlayback`（权限 `FOREGROUND_SERVICE_MEDIA_PLAYBACK` 上游已声明），`onStartCommand` 成功后 `silentAudio.start()`，`onDestroy` 停。
+- `HttpCacheService` manifest 类型 `dataSync` → `mediaPlayback`（权限 `FOREGROUND_SERVICE_MEDIA_PLAYBACK` 上游已声明），`onStartCommand` 成功后 `silentAudio.start()`，`onDestroy` 停。6.3.0 适配将同一保活方案用于主进程的官方 PikPak 服务；HTTP 与 PikPak 服务均使用静音 mediaPlayback 音轨、请求电池优化豁免并持有 partial WakeLock（PikPak 的豁免/WakeLock 由 0006 增补，0005 只覆盖 HTTP），不改 BT 独立进程策略，并修复异常路径上的 `AudioTrack` 释放。
 - `HttpCacheServiceController` 去重：同一进程生命周期状态下只发一次 `startForegroundService`，状态变化时允许重试。
 
 为什么：harmony.5 日志证明 dataSync 前台服务 + partial WakeLock + 电池优化豁免全部到位，退后台后仍在几秒内冻结（14:55:44 最后进度 → 14:58:51 回前台后请求以 3m07s 超时失败）。卓易通的宿主只把"正在播放音频"当成保活理由（这是它的主场景）。副作用：鸿蒙控制中心/状态栏可能显示卓易通在播放音频；用户在其他 App 听歌时会有一路静音混入（听不出来）。若还不够，下一步是再挂一个 `PlaybackState.STATE_PLAYING` 的 `MediaSession`，代价是控制中心会出现 Animeko 的媒体卡片。
@@ -115,8 +122,7 @@ rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheServi
 - `NotificationDisplayStrategy.Working` 新增 `progress: Int?`（0–100）和 `detail: String?`，默认 `null` 时通知与 0006 之前完全一样。
 - `ServiceNotification.buildNotification()`：先按 `appearance.content` 格式化出速度文本，有 `progress` 时追加「 · N%」并 `setProgress(100, N, false)`；
   有 `detail` 时 `BigTextStyle` 展开显示「<正文>\n<detail>」。
-- `HttpCacheService`：`HttpDownloadActivity` 新增 `progress`（活动任务按 `totalSize` 加权汇总 `DownloadSnapshot.progress`，有任务大小未知则取平均，都没报进度则 `null`）
-  和 `currentItem`（第一个活动任务的「`subjectNameCN`（或首个名称）- `episodeSort episodeName`」）。
+- HTTP 与 PikPak 通知分别覆盖各自服务：HTTP `HttpDownloadActivity` 汇总活动任务进度并展示当前项；6.3.0 适配也为 PikPak 官方服务补上进度与当前项。BT 继续使用 `TorrentDownloader.Stats.downloadProgress`。
 - `AniTorrentService`：`stats.totalSize > 0` 时传 `(downloadProgress × 100)`。
 
 目的：与 mihon-harmony 0006 / anikku-harmony 0010 定稿的统一通知格式一致——标题「正在<动词> N 个<单位>」、正文「下载：<速度>/s · <进度>%」、确定型进度条、展开显示当前项（见归档仓 `docs/卓易通问题矩阵.md` 第 2 节）。
@@ -131,7 +137,7 @@ rebase 时留意：上游 `main` 已为 PikPak 做了同构的 `PikPakCacheServi
 - `AniApplication.onCreate`：`startKoin` 之后 `scope.launch(Dispatchers.IO_) { koin.get<UpdateManager>().deleteInstalledFiles() }`，与 `AniDesktop.kt` 同一调用；文件名含当前 `versionName` 的安装包会被删（harmony.1 与 harmony.10 的包含关系是上游逻辑的已知边角，忽略）。
 - 字符串：`settings_update_popup_auto_update` 四个语言由「自动更新 / Auto-update」改为「立即更新 / Update now」。`values-zh`、`values-zh-rSG`、`values-zh-rMO` 由 Gradle 任务从 rCN / rHK 复制，不在仓库里。
 
-配套：`harmony_release.yml` 的「Write release notes」步骤用 `awk` 从 `patches/CHANGELOG.md` 取 `## harmony.$PATCH_NUMBER` 小节写成「## 本次变更」（找不到则写「- 见下方补丁列表。」），放在补丁清单之前。**每次发版前先在 CHANGELOG.md 补一节**，否则弹窗里只会看到那句兜底文案。
+配套：`harmony_release.yml` 的「Write release notes」步骤按完整 `HARMONY_VERSION` 从 `patches/CHANGELOG.md` 读取对应标题（例如 `## 6.3.0-harmony.1`），再写成「## 本次变更」。旧标题 `## 6.2.0-harmony.N` 不会匹配新稳定版本的 `.1`，避免稳定版序号重置后误用旧说明。发版前必须添加对应完整版本标题；找不到时只会写「- 见下方补丁列表。」兜底。
 
 ### 0009 Release 索引镜像（`app/shared/ui-settings/.../ui/update/HarmonyForkUpdates.kt`）
 
@@ -163,8 +169,8 @@ Actions → **Harmony Release** → Run workflow：
 
 - `upstream_tag`：官方 tag，如 `v6.3.0`；留空取最新稳定版。只接受 `vX.Y.Z`，不支持 alpha/beta。
 - `patch_number`：同一官方版本第几次打包，从 `1` 开始。改了补丁想重编就填 `2`、`3`……
-- 发版前在 `patches/CHANGELOG.md` 加 `## harmony.<N>` 小节（给用户看的要点，每行 `- ` 开头，每条不超过 30 个字、不写 Markdown），它会成为 Release 正文和应用内更新弹窗的「本次变更」。
-- `dry_run`：勾上只编译、上传 artifact，不建 Release 也不写索引；想先确认补丁能编过时用它（`patch_number` 随便填，不会和已有 Release 冲突）。
+- 发版前在 `patches/CHANGELOG.md` 加与完整版本一致的小节标题，例如 `## 6.3.0-harmony.1`（给用户看的要点，每行 `- ` 开头，每条不超过 30 个字、不写 Markdown），它会成为 Release 正文和应用内更新弹窗的「本次变更」。旧版本标题不会为新版本匹配。
+- `dry_run`：勾上只编译、上传 artifact，不建 Release 也不写索引；想先确认补丁能编过时用它（`patch_number` 随便填，不会和已有 Release 冲突）。既有 CI artifact 可用 `check_patches.yml` 的 `workflow_dispatch` 输入 `artifact_run_id` 与 `harmony_version` 只读校验，不会重编译；验证逻辑见 `scripts/verify-apk.sh`。
 
 同名 Release 已存在会直接跳过；要重编必须换补丁号或先删旧 Release。整个流程约 15 分钟（首个版本 `v6.2.0-harmony.1` 实测 14 分钟；Animeko 编译很重，参数照搬上游 CI 的 8g 堆 + 10g swap）。
 
@@ -196,9 +202,9 @@ Animeko 的 Gradle 通过环境变量读取签名参数（`build-logic/src/main/
      （需要 `local.properties` 里有 `sdk.dir`；如果本机 JDK 不是 JetBrains Runtime，再加一行 `jvm.toolchain.vendor=<本机 java.vendor 的子串>`，如 `adoptium`、`ubuntu`）
 3. `git add -A && git commit`，保留原来的提交说明（`git commit -c <旧补丁里的 From 提交>` 或直接复制标题/正文）。
 4. `git format-patch -1 HEAD -o /tmp/out`，把生成的文件覆盖到 `patches/` 对应文件名（文件名保持不变，`series` 不用改）。
-5. 推到 `main`，`check_patches.yml` 会自动验证；然后手动或等定时任务出包。
+5. 本轮 6.3.0 的 10 张补丁已在独立 depth-1 `v6.3.0` 克隆上成功套用，26 个改动源码文件与开发树逐字节一致；dry-run 构建与只读 APK 验证均通过。此候选尚未合并或正式发布；真机验证与正式发版仍按计划进行。后续补丁更新推到 `main`，由 `check_patches.yml` 验证后手动或等定时任务出包。
 
-`check_patches.yml` 的 `main` 目标失败只是预警：说明下一个稳定版发布时需要 rebase，可以提前准备。
+`check_patches.yml` 的 stable 补丁目标已通过；可选 `main` 目标仍对 0002 的 `serverUrls` 有预警，记录并按后续上游变化复核。
 
 ## 7. 排错手册
 

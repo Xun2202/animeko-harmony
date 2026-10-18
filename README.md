@@ -5,6 +5,8 @@
 > 每天检查 Animeko 官方最新稳定版，拉取官方源码、套用 [`patches/`](./patches) 下的补丁、编译签名 APK，发布到本仓库的
 > [Releases](../../releases)。tag 形如 `v6.2.0-harmony.1`。
 >
+> **当前状态（2026-10-18）**：最新正式版仍是 `v6.2.0-harmony.10`。6.3.0 候选 `v6.3.0-harmony.1` 已由 CI 构建、签名并通过APK 核验；它仍是测试产物，尚未合并或正式发布。可查看 [CI 测试包](https://github.com/Xun2202/animeko-harmony/actions/runs/39099774585/artifacts/12125819999) 与 [PR #1](https://github.com/Xun2202/animeko-harmony/pull/1)。真机后台 HTTP/PikPak 下载与通知/暂停，以及正式发布后的应用内更新仍待验证。
+>
 > 目标是改善 Animeko 在 HarmonyOS 卓易通（Android 兼容容器）中的可用性。本项目不隶属于、也不受 OpenAni 官方支持；
 > 与本构建相关的问题请提到本仓库，不要向 Animeko 上游反馈。本构建沿用上游的 [AGPL-3.0](https://github.com/open-ani/animeko/blob/main/LICENSE.txt) 许可，
 > 原始项目与绝大部分代码归功于 [OpenAni 及其贡献者](https://github.com/open-ani/animeko/graphs/contributors)。
@@ -57,18 +59,24 @@
 
 | 补丁 | 作用 |
 | --- | --- |
-| [`0001-android-harden-foreground-service-notification.patch`](./patches/0001-android-harden-foreground-service-notification.patch) | BT 下载前台服务每次都真正调用 `startForeground()`，不再依赖 `activeNotifications` 判断；只影响 **BT 源**缓存；在线源缓存见 0004。详细分析见 [`docs/ANALYSIS.md`](./docs/ANALYSIS.md)。 |
+| [`0001-android-harden-foreground-service-notification.patch`](./patches/0001-android-harden-foreground-service-notification.patch) | 目标是让 BT 下载前台服务每次都真正调用 `startForeground()`，不依赖 `activeNotifications` 判断。原 6.2.0 版本因 `ServiceNotification` 构造参数改造及上游新增 PikPak 共享服务，无法直接套用到 6.3.0；当前补丁已按 6.3.0 新 API 重做。鸿蒙环境的通知根因仍在。在线源缓存见 0004。详细分析见 [`docs/ANALYSIS.md`](./docs/ANALYSIS.md)。 |
 | [`0002-updater-use-harmony-fork-releases.patch`](./patches/0002-updater-use-harmony-fork-releases.patch) | 版本号为 `x.y.z-harmony.N` 时，应用内更新改查本仓库 GitHub Releases，并按 `(x, y, z, N)` 比较版本；否则官方更新服务器会把它当成 `x.y.z` 的预发布版而推送官方 APK（签名不同无法安装）。 |
-| [`0004-android-foreground-service-for-http-caches.patch`](./patches/0004-android-foreground-service-for-http-caches.patch) | 在线源（HTTP / m3u8）缓存原本在主进程里直接下载，没有任何前台服务和通知，App 一退后台进程就被冻结、下载停摆。新增 `HttpCacheService`：有在线源缓存进行中时在主进程挂一个 `dataSync` 前台服务并显示进度通知（带「暂停全部」），缓存完成后自动退出。与上游 `main` 为 PikPak 做的 `PikPakCacheService` 同一思路。 |
-| [`0005-android-battery-exemption-and-wake-lock.patch`](./patches/0005-android-battery-exemption-and-wake-lock.patch) | 第一次开始在线源缓存时请求「忽略电池优化」（FlClash 等能常驻后台的应用都这么做），`HttpCacheService` 存活期间持有 partial WakeLock。应对鸿蒙在前台服务存在时仍冻结进程的情况。 |
-| [`0006-android-silent-audio-keep-alive.patch`](./patches/0006-android-silent-audio-keep-alive.patch) | `HttpCacheService` 改为 `mediaPlayback` 类型，存活期间循环播放一段静音音轨（不申请音频焦点，不影响其他 App 放音）。实测卓易通对 dataSync 前台服务 + WakeLock + 电池豁免仍在退后台几秒内冻结进程，只有音频播放会被宿主保活。 |
+| [`0004-android-foreground-service-for-http-caches.patch`](./patches/0004-android-foreground-service-for-http-caches.patch) | 6.2.0 的 HTTP / WebM3u 缓存由 `HttpCacheService` 管理。6.3.0 上游已有独立 `PikPakCacheService`，因此此补丁只负责 WebM3u；PikPak 官方服务保留自己的 ID 115、超时/重试与暂停逻辑，HTTP 服务用 ID 116，BT 仍用 114。 |
+| [`0005-android-battery-exemption-and-wake-lock.patch`](./patches/0005-android-battery-exemption-and-wake-lock.patch) | HTTP 缓存继续保留首次缓存时的电池优化豁免请求与服务存活期间的 partial WakeLock；这些能力仍是鸿蒙后台适配的一部分。 |
+| [`0006-android-silent-audio-keep-alive.patch`](./patches/0006-android-silent-audio-keep-alive.patch) | HTTP 与 PikPak 主进程缓存服务均使用 `mediaPlayback` 前台服务、循环静音音轨保活，并保留电池优化豁免与 partial WakeLock（HTTP 的豁免/WakeLock 来自 0005）。不申请音频焦点；BT 独立进程维持原策略。6.3.0 适配修复静音 `AudioTrack` 异常释放问题。 |
 | [`0003-android-use-harmony-application-id.patch`](./patches/0003-android-use-harmony-application-id.patch) | `applicationId` 改为 `me.him188.ani.harmony`（应用名保持「Animeko」），并同步 `AndroidBuildConfig.APP_APPLICATION_ID`（FileProvider authority 由它拼出）。绕过卓易通对已知包名的签名校验，并允许与官方版共存。 |
-| [`0007-android-download-notification-progress.patch`](./patches/0007-android-download-notification-progress.patch) | 两个下载前台服务的通知与 Mihon / Anikku 鸿蒙版统一：正文在速度后追加「 · N%」并显示确定型进度条（在线源缓存按文件大小加权汇总各任务进度，大小未知时取平均；BT 用 `TorrentDownloader.Stats.downloadProgress`），在线源缓存通知下拉展开还显示正在缓存的「番剧 - 集」。`NotificationDisplayStrategy.Working` 新增可选的 `progress` / `detail`，不改任何字符串。 |
+| [`0007-android-download-notification-progress.patch`](./patches/0007-android-download-notification-progress.patch) | 下载通知显示速度、进度条和当前项；6.3.0 适配覆盖 HTTP 与 PikPak 缓存进度/当前项，BT 继续使用独立服务的下载进度。`NotificationDisplayStrategy.Working` 增加可选 `progress` / `detail`，不改字符串。 |
 | [`0008-update-manual-check-and-popup-fixes.patch`](./patches/0008-update-manual-check-and-popup-fixes.patch) | 修复应用内更新的四个问题：① 设置页「检查更新」与自动检查走同一个 `autoCheckUpdate` 判断，关闭「自动检查更新」后手动点也没反应，现在只有自动检查受开关控制，手动检查没有新版本时显示「已是最新」；② `NewVersionPopupCard` 的更新说明是对话框里一个不能滚动的 `Column`，说明一长（本仓库 Release 正文开头是补丁清单）就把「查看详情 / 立即更新」挤出屏幕，现在限高 280dp 内滚动；③ `HarmonyForkUpdates` 只取 Release 正文「## 本次变更」一节作为更新说明（内容来自 [`patches/CHANGELOG.md`](./patches/CHANGELOG.md)，由 `harmony_release.yml` 写进正文），没有该节的旧 Release 回退到整段正文；④ 「应用内下载」开关不再随「自动检查更新」一起变灰，弹窗按钮「自动更新」改为「立即更新」（en: Update now），设置页「查看更新日志」对 harmony 版本指向本仓库 Release 页。另外 Android 启动时调用上游已有的 `UpdateManager.deleteInstalledFiles()`（此前只有桌面端调用），删除已安装完成的安装包。 |
 | [`0009-update-release-mirror.patch`](./patches/0009-update-release-mirror.patch) | 修复「检查更新」撞上 GitHub 匿名接口配额（每个出口 IP 每小时 60 次，NAT / 代理后面所有人共用）而失败（HTTP 403）：`HarmonyForkUpdates.kt` 新增 `listHarmonyForkReleases()`，优先读 `https://raw.githubusercontent.com/<repo>/repo/releases.json`（流水线写的接口原样镜像），失败再退回 `api.github.com/repos/<repo>/releases?per_page=30`；版本比较、`本次变更` 提取、APK 挑选逻辑不变。与 mihon-harmony 0008、anikku-harmony 0014 同一轮。 |
 | [`0010-update-popup-narrow-screen-and-plain-changelog.patch`](./patches/0010-update-popup-narrow-screen-and-plain-changelog.patch) | 修复窄屏手机上新版本弹窗的排版：「查看详情」和「立即更新」放不进一行时，`BasicNotificationPopupCard` 的 `Row` 会把最后一个按钮压扁、文字折成两行；改为把按钮放进 `FlowRow`（间距 8 dp / 12 dp，与 Material3 `AlertDialog` 的按钮区一致）整体换行。另外弹窗按纯文本显示更新说明，`harmonyForkChangelog()` 现在会去掉行内的 `` ` ``、`**`、`__` 和 `[文字](链接)` 标记，不再把 Markdown 符号原样显示出来。 |
 
 补丁按 [`patches/series`](./patches/series) 的顺序套用。
+
+## 当前适配状态
+
+6.3.0 候选 `v6.3.0-harmony.1` 的 10 张补丁已在独立源码树成功套用，CI 构建、签名与APK 核验均通过。测试包见上方 Actions artifact；PR #1 尚未合并，正式版仍为 `v6.2.0-harmony.10`。真机后台 HTTP/PikPak 下载、通知/暂停及正式发布后的应用内升级仍待验证。
+
+本轮没有移植 Mihon / Anikku 的全景瀑布流改动：Animeko 普通列表使用 `LazyVerticalGrid`，没有对应的 `PanoramaMasonry`、比例占位重排或全景自动列实现；精确 delta、封面尺寸预读与全景自动列方案不适用。性能记录器虽可泛用，目前没有已知 Animeko 需求，因此不加入本轮。
 
 ## 版本号规则
 

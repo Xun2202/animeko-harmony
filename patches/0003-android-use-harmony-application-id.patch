@@ -1,20 +1,9 @@
-From 1f554b316d537ff122648a0b480cec6a8740ffaa Mon Sep 17 00:00:00 2001
-From: Xun2202 <xun2202@users.noreply.github.com>
-Date: Thu, 1 Oct 2026 06:00:22 +0000
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Xun2202 <98207886+Xun2202@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 04:55:21 +0000
 Subject: [PATCH] android: use a dedicated applicationId for the Harmony build
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-HarmonyOS 卓易通 refuses to install APKs whose package name is in its
-catalogue but whose signature does not match the official one, and the
-system then falls back to 出境易 with "暂不支持安装该应用".
-
-Switch the Harmony build to the package name `me.him188.ani.harmony`
-so it is treated as an independent app. This also lets it coexist with
-the official Animeko install. The FileProvider authority derived from
-AndroidBuildConfig.APP_APPLICATION_ID is updated to match; the launcher
-label stays "Animeko".
+Rebased for Animeko v6.3.0 while retaining the existing Harmony behavior.
 ---
  app/android/build.gradle.kts                      | 2 +-
  app/shared/src/androidMain/res/values/strings.xml | 2 +-
@@ -22,10 +11,10 @@ label stays "Animeko".
  3 files changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/app/android/build.gradle.kts b/app/android/build.gradle.kts
-index 5a76277..f5ccded 100644
+index f7b959704..c71fd5493 100644
 --- a/app/android/build.gradle.kts
 +++ b/app/android/build.gradle.kts
-@@ -36,7 +36,7 @@ android {
+@@ -37,7 +37,7 @@ android {
      namespace = "me.him188.ani.android"
      compileSdk = getIntProperty("android.compile.sdk")
      defaultConfig {
@@ -35,7 +24,7 @@ index 5a76277..f5ccded 100644
          targetSdk = getIntProperty("android.compile.sdk")
          versionCode = getIntProperty("android.version.code")
 diff --git a/app/shared/src/androidMain/res/values/strings.xml b/app/shared/src/androidMain/res/values/strings.xml
-index bbf2153..a2d6486 100644
+index bbf21538d..a2d648684 100644
 --- a/app/shared/src/androidMain/res/values/strings.xml
 +++ b/app/shared/src/androidMain/res/values/strings.xml
 @@ -9,7 +9,7 @@
@@ -48,10 +37,10 @@ index bbf2153..a2d6486 100644
      <string name="app_service_title_text_idle">No download tasks</string>
      <string name="app_service_title_text_working">Downloading %1$d resource(s)</string>
 diff --git a/utils/build-config/build.gradle.kts b/utils/build-config/build.gradle.kts
-index 7d74dcc..4ac26fd 100644
+index 68f73c405..ce8570ae2 100644
 --- a/utils/build-config/build.gradle.kts
 +++ b/utils/build-config/build.gradle.kts
-@@ -22,7 +22,7 @@ android {
+@@ -27,7 +27,7 @@ android {
  
      buildTypes {
          release {
@@ -60,6 +49,3 @@ index 7d74dcc..4ac26fd 100644
          }
  
          debug {
--- 
-2.43.0
-

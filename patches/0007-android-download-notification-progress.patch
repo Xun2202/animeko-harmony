@@ -1,33 +1,19 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Xun2202 <98207886+Xun2202@users.noreply.github.com>
-Date: Tue, 6 Oct 2026 10:46:14 +0000
+Date: Sun, 18 Oct 2026 04:55:21 +0000
 Subject: [PATCH] android: show progress in the download service notifications
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-Align the two download notifications with the HarmonyOS builds of
-Mihon and Anikku so that the three apps read alike in the shade:
-
-- content: "<speed text> · <progress>%" with a determinate progress bar
-  whenever the service knows the overall progress
-- HTTP cache service: progress is weighted by size over the active
-  in-process downloads (plain mean when a size is unknown, nothing when
-  none reports a progress), and the expanded notification shows the
-  "<subject> - <episode>" currently being cached
-- BT service: progress comes from TorrentDownloader.Stats.downloadProgress
-
-NotificationDisplayStrategy.Working gains optional progress / detail
-fields; the defaults keep the previous single-line notification, so
-no strings change.
+Rebased for Animeko v6.3.0 while retaining the existing Harmony behavior.
+Preserve progress and current-item notifications for HTTP, PikPak and torrent downloads.
 ---
  .../torrent/service/AniTorrentService.kt      |  6 ++++
  .../torrent/service/HttpCacheService.kt       | 34 +++++++++++++++++++
+ .../torrent/service/PikPakCacheService.kt     | 11 ++++++
  .../torrent/service/ServiceNotification.kt    | 28 +++++++++++----
- 3 files changed, 61 insertions(+), 7 deletions(-)
+ 4 files changed, 72 insertions(+), 7 deletions(-)
 
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt
-index 8b8c8c0..6942c2f 100644
+index 8b8c8c07b..6942c2fcd 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt
 @@ -137,6 +137,12 @@ sealed class AniTorrentService : LifecycleService() {
@@ -44,7 +30,7 @@ index 8b8c8c0..6942c2f 100644
                      } else {
                          NotificationDisplayStrategy.Idle(stats.downloadSpeed.bytes, stats.uploadSpeed.bytes)
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
-index 1c5e5fd..9c27e94 100644
+index 9ac33cf69..9f0a7b55c 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
 @@ -28,6 +28,7 @@ import me.him188.ani.app.domain.media.cache.MediaCacheState
@@ -64,7 +50,7 @@ index 1c5e5fd..9c27e94 100644
                              )
                          } else {
                              NotificationDisplayStrategy.Idle(activity.downloadSpeed, FileSize.Zero)
-@@ -201,6 +204,10 @@ internal fun MediaCacheEngineKey.isInProcess(): Boolean = this != MediaCacheEngi
+@@ -201,6 +204,10 @@ internal fun MediaCacheEngineKey.isInProcess(): Boolean = this == MediaCacheEngi
  internal data class HttpDownloadActivity(
      val taskCount: Int,
      val downloadSpeed: FileSize,
@@ -95,7 +81,7 @@ index 1c5e5fd..9c27e94 100644
 + * downloads that report a progress at all; `null` when none does (e.g. HLS streams without a
 + * known length).
 + */
-+private fun List<DownloadSnapshot>.overallProgressPercent(): Int? {
++internal fun List<DownloadSnapshot>.overallProgressPercent(): Int? {
 +    val reporting = mapNotNull { snapshot ->
 +        snapshot.progress.getOrNull()?.let { fraction -> fraction to snapshot.totalSize }
 +    }
@@ -109,11 +95,47 @@ index 1c5e5fd..9c27e94 100644
 +    }
 +    return (fraction * 100).toInt().coerceIn(0, 100)
 +}
+diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheService.kt
+index 766fd04eb..9505dc143 100644
+--- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheService.kt
++++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/PikPakCacheService.kt
+@@ -92,6 +92,8 @@ class PikPakCacheService : LifecycleService(), KoinComponent {
+                                 activity.downloadSpeed,
+                                 FileSize.Zero,
+                                 activity.taskCount,
++                                progress = activity.progress,
++                                detail = activity.currentItem,
+                             )
+                         } else {
+                             NotificationDisplayStrategy.Idle(activity.downloadSpeed, FileSize.Zero)
+@@ -183,6 +185,8 @@ class PikPakCacheService : LifecycleService(), KoinComponent {
+ internal data class PikPakDownloadActivity(
+     val taskCount: Int,
+     val downloadSpeed: FileSize,
++    val progress: Int? = null,
++    val currentItem: String? = null,
+ )
+ 
+ /**
+@@ -202,6 +206,13 @@ internal fun pikPakDownloadActivity(manager: MediaDownloadManager): Flow<PikPakD
+                 downloadSpeed = active
+                     .sumOf { snapshot -> snapshot.downloadSpeed.takeIf { !it.isUnspecified }?.inBytes ?: 0L }
+                     .bytes,
++                progress = active.overallProgressPercent(),
++                currentItem = active.firstOrNull()?.let { snapshot ->
++                    val metadata = snapshot.metadata
++                    val subject = metadata.subjectNameCN ?: metadata.subjectNames.firstOrNull()
++                    val episode = "${metadata.episodeSort} ${metadata.episodeName}".trim()
++                    listOfNotNull(subject, episode.takeIf { it.isNotEmpty() }).joinToString(" - ")
++                },
+             )
+         }
+         .distinctUntilChanged()
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
-index e48b949..3e34a25 100644
+index 3ee3ab786..10eff9ab6 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
-@@ -205,6 +205,17 @@ class ServiceNotification(
+@@ -163,6 +163,17 @@ class ServiceNotification(
                  PendingIntent.FLAG_IMMUTABLE,
              )
  
@@ -131,7 +153,7 @@ index e48b949..3e34a25 100644
          return Notification.Builder(context, notificationChannel.id).apply {
              setContentTitle(
                  when (displayStrategy) {
-@@ -213,13 +224,9 @@ class ServiceNotification(
+@@ -171,13 +182,9 @@ class ServiceNotification(
                          String.format(appearance.titleWorking, displayStrategy.taskCount)
                  },
              )
@@ -148,7 +170,7 @@ index e48b949..3e34a25 100644
              setSmallIcon(notificationAppearance.icon)
              setContentIntent(openActivityAction)
              setActions(
-@@ -281,9 +288,16 @@ sealed class NotificationDisplayStrategy(val downloadSpeed: FileSize, val upload
+@@ -240,9 +247,16 @@ sealed class NotificationDisplayStrategy(val downloadSpeed: FileSize, val upload
          uploadSpeed: FileSize
      ) : NotificationDisplayStrategy(downloadSpeed, uploadSpeed)
  

@@ -1,27 +1,17 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Xun2202 <98207886+Xun2202@users.noreply.github.com>
-Date: Wed, 7 Oct 2026 03:24:55 +0000
+Date: Sun, 18 Oct 2026 04:55:21 +0000
 Subject: [PATCH] update: wrap the popup buttons on narrow screens and strip
  inline Markdown from the changelog
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-On narrow phones the new-version dialog cannot fit "查看详情" and "立即更新"
-on one line; the Row squeezed the last button and its label broke into
-two lines. Put the actions into a FlowRow (8 dp / 12 dp spacing, as in
-Material3 AlertDialog) so the buttons wrap as a whole instead.
-
-The popup renders each changelog line as plain text, so the `code`,
-**bold** and [link](url) markers written in patches/CHANGELOG.md showed
-up literally; strip them in harmonyForkChangelog().
+Rebased for Animeko v6.3.0 while retaining the existing Harmony behavior.
 ---
  .../kotlin/ui/update/HarmonyForkUpdates.kt           |  9 ++++++++-
  .../commonMain/kotlin/ui/update/NewVersionDialog.kt  | 12 ++++++++++--
  2 files changed, 18 insertions(+), 3 deletions(-)
 
 diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
-index 0ecf84e..0a926d9 100644
+index 0ecf84e78..0a926d9a0 100644
 --- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
 +++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
 @@ -139,11 +139,15 @@ internal suspend fun HttpClient.getHarmonyForkLatestVersion(
@@ -57,7 +47,7 @@ index 0ecf84e..0a926d9 100644
   * Picks the APK for this device first and the universal APK as a fallback. Release assets are named
   * `ani-<version>-<abi>.apk`, matching the official release layout.
 diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt
-index 3659d08..cc509a8 100644
+index 3659d08af..cc509a88d 100644
 --- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt
 +++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt
 @@ -83,7 +83,6 @@ fun NewVersionPopupCard(

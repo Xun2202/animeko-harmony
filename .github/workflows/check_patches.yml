@@ -18,6 +18,15 @@ on:
   schedule:
     - cron: '41 2 * * 1'
   workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: 'Optional: verify the APK artifact from this Harmony Release run'
+        required: false
+        type: string
+      harmony_version:
+        description: 'Expected APK version, e.g. 6.3.0-harmony.1'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -81,3 +90,30 @@ jobs:
             git -C "$RUNNER_TEMP/animeko" log --oneline -n 5
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  verify_existing_artifact:
+    if: github.event_name == 'workflow_dispatch' && inputs.artifact_run_id != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    env:
+      ARTIFACT_RUN_ID: ${{ inputs.artifact_run_id }}
+      HARMONY_VERSION: ${{ inputs.harmony_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - name: Validate dispatch inputs
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$HARMONY_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-harmony\.[0-9]+$ ]]
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ env.ARTIFACT_RUN_ID }}
+          github-token: ${{ github.token }}
+          name: animeko-harmony-v${{ env.HARMONY_VERSION }}
+          path: artifact-dir
+      - name: Verify APK package, version, ABI, manifest, and signature
+        run: bash scripts/verify-apk.sh artifact-dir "$HARMONY_VERSION"

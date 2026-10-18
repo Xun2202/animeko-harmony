@@ -1,35 +1,18 @@
-From a4f63a687bca6b3edcafe7e4f39739003aa79c0c Mon Sep 17 00:00:00 2001
-From: Cursor Agent <agent@cursor.local>
-Date: Wed, 30 Sep 2026 17:17:59 +0000
-Subject: [PATCH 1/2] fix(android): always startForeground for torrent service,
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Xun2202 <98207886+Xun2202@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 04:55:20 +0000
+Subject: [PATCH] fix(android): always startForeground for torrent service,
  stop relying on activeNotifications
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-ServiceNotification decided whether to call startForeground() and whether to refresh
-the notification by looking up its own id in NotificationManager.activeNotifications.
-That assumption breaks on Android compatibility layers (HarmonyOS 卓易通) where the
-shade is bridged to the host OS: a stale notification made the service skip
-startForeground() and run as a plain background service (frozen on background/lock
-screen), and a missing entry made every notification update a silent no-op, so the
-'downloading N resources' state never showed up.
-
-- Always call startForeground() (idempotent) and track foreground state locally.
-- Keep the last display strategy so restarts do not reset the notification to idle.
-- Catch IllegalStateException/SecurityException with stack traces; warn when
-  notifications or the channel are blocked so bug reports show it.
-- AniTorrentService stops itself when the foreground start is refused.
-- AniTorrentServiceStarter times out (15s) waiting for the startup broadcast instead
-  of hanging forever.
+Rebased for Animeko v6.3.0 while retaining the existing Harmony behavior.
 ---
- .../torrent/service/AniTorrentService.kt      | 10 ++-
- .../service/AniTorrentServiceStarter.kt       | 46 ++++++----
- .../torrent/service/ServiceNotification.kt    | 84 ++++++++++++++-----
- 3 files changed, 105 insertions(+), 35 deletions(-)
+ .../torrent/service/AniTorrentService.kt      | 10 +++-
+ .../service/AniTorrentServiceStarter.kt       | 46 ++++++++++-----
+ .../torrent/service/ServiceNotification.kt    | 57 +++++++++----------
+ 3 files changed, 69 insertions(+), 44 deletions(-)
 
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt
-index 8abecbf..8b8c8c0 100644
+index 8abecbf30..8b8c8c07b 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentService.kt
 @@ -163,7 +163,15 @@ sealed class AniTorrentService : LifecycleService() {
@@ -50,7 +33,7 @@ index 8abecbf..8b8c8c0 100644
  
  
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentServiceStarter.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentServiceStarter.kt
-index 8b27447..d99300e 100644
+index 8b2744750..d99300ec0 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentServiceStarter.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/AniTorrentServiceStarter.kt
 @@ -20,11 +20,14 @@ import androidx.core.content.ContextCompat
@@ -127,7 +110,7 @@ index 8b27447..d99300e 100644
  }
 \ No newline at end of file
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
-index 46c947f..3bacfd3 100644
+index e6b8386b3..3ee3ab786 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/ServiceNotification.kt
 @@ -9,7 +9,6 @@
@@ -138,58 +121,34 @@ index 46c947f..3bacfd3 100644
  import android.app.Notification
  import android.app.NotificationChannel
  import android.app.NotificationManager
-@@ -36,6 +35,24 @@ class ServiceNotification(
+@@ -48,6 +47,8 @@ class ServiceNotification(
      var notificationAppearance = defaultNotificationAppearance
          private set
      private var notificationOpenActivityIntent: Intent? = null
-+
-+    /**
-+     * Whether [Service.startForeground] succeeded for the current service instance.
-+     *
-+     * Tracked locally instead of querying [NotificationManager.getActiveNotifications]: the shade is not a
-+     * reliable mirror of the foreground state. A notification can outlive the service process (process
-+     * restart, or Android compatibility layers such as HarmonyOS 卓易通 that bridge notifications to the host
-+     * OS), and some environments do not report foreground notifications there at all.
-+     */
-+    @Volatile
-+    private var isForeground = false
-+
-+    /**
-+     * Last state pushed by the service. Re-entering the foreground reuses it so a sticky restart or a
-+     * repeated start command does not flip a "downloading" notification back to idle.
-+     */
-+    @Volatile
-+    private var lastDisplayStrategy: NotificationDisplayStrategy = NotificationDisplayStrategy.Idle(0.bytes, 0.bytes)
++    @Volatile private var isForeground = false
++    @Volatile private var lastDisplayStrategy: NotificationDisplayStrategy = NotificationDisplayStrategy.Idle(0.bytes, 0.bytes)
      private val stopServiceIntent by lazy {
          PendingIntent.getService(
-             context, 0,
-@@ -95,28 +112,37 @@ class ServiceNotification(
+             context, notificationId,
+@@ -113,40 +114,38 @@ class ServiceNotification(
+         )
      }
  
-     /**
+-    /**
 -     * create notification with initial state idle.
-+     * Promote [service] to the foreground, showing the last known state (idle on first start).
-+     *
-+     * [Service.startForeground] is issued on every call. It is idempotent, and skipping it because a
-+     * notification with our id is already visible is unsafe: that notification may be a leftover of a
-+     * previous instance, in which case this instance would silently keep running as a plain background
-+     * service and be frozen or killed as soon as the app leaves the foreground or the screen locks.
-+     *
-+     * @return `false` if the system refused the foreground start. The service must not stay alive in that
-+     * case, see [AniTorrentService.onStartCommand].
-      */
+-     */
++    /** Promotes each service instance without relying on the system notification shade. */
      fun createNotification(service: Service): Boolean {
--        val currentNotification = notificationService.activeNotifications.find { it.id == NOTIFICATION_ID }
+-        val currentNotification = notificationService.activeNotifications.find { it.id == notificationId }
 -        if (currentNotification != null) return true
-+        warnIfNotificationsAreHidden()
- 
+-
 -        val notification = buildNotification(
 -            notificationAppearance,
 -            NotificationDisplayStrategy.Idle(0.bytes, 0.bytes),
 -        )
 -        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
 -            try {
--                service.startForeground(NOTIFICATION_ID, notification)
+-                service.startForeground(notificationId, notification)
 -                return true
 -            } catch (e: ForegroundServiceStartNotAllowedException) {
 -                // Android 15 limitation: https://developer.android.com/about/versions/15/behavior-changes-15#datasync-timeout
@@ -197,60 +156,44 @@ index 46c947f..3bacfd3 100644
 -                return false
 -            }
 -        } else {
-+        val notification = buildNotification(notificationAppearance, lastDisplayStrategy)
-+        return try {
-             service.startForeground(NOTIFICATION_ID, notification)
+-            service.startForeground(notificationId, notification)
 -            return true
++        warnIfNotificationsAreHidden()
++        return try {
++            service.startForeground(notificationId, buildNotification(notificationAppearance, lastDisplayStrategy))
 +            isForeground = true
 +            true
 +        } catch (e: IllegalStateException) {
-+            // ForegroundServiceStartNotAllowedException (background start, Android 15 dataSync budget:
-+            // https://developer.android.com/about/versions/15/behavior-changes-15#datasync-timeout) and
-+            // MissingForegroundServiceTypeException both extend IllegalStateException.
 +            isForeground = false
 +            logger.warn(e) { "Foreground service start not allowed (possibly due to system limitations)" }
 +            false
 +        } catch (e: SecurityException) {
-+            // Missing FOREGROUND_SERVICE_* permission for the declared type. Should not happen with our
-+            // manifest, but compatibility layers may enforce this differently from AOSP.
 +            isForeground = false
 +            logger.warn(e) { "Foreground service start rejected by the system" }
 +            false
          }
      }
  
-@@ -124,12 +150,30 @@ class ServiceNotification(
-      * update notification to current state.
-      */
+-    /**
+-     * update notification to current state.
+-     */
      fun updateNotification(displayStrategy: NotificationDisplayStrategy) {
--        notificationService.activeNotifications.find { it.id == NOTIFICATION_ID } ?: return
+-        notificationService.activeNotifications.find { it.id == notificationId } ?: return
 +        lastDisplayStrategy = displayStrategy
 +        if (!isForeground) return
++        notificationService.notify(notificationId, buildNotification(notificationAppearance, displayStrategy))
++    }
  
-         val notification = buildNotification(notificationAppearance, displayStrategy)
-         notificationService.notify(NOTIFICATION_ID, notification)
-     }
- 
-+    /**
-+     * The foreground service still runs when notifications are blocked, but the user gets no hint that a
-+     * download is running and cannot stop it from the shade. Log it so the state shows up in bug reports,
-+     * which is the only place we can see it for environments we cannot test on.
-+     */
+-        val notification = buildNotification(notificationAppearance, displayStrategy)
+-        notificationService.notify(notificationId, notification)
 +    private fun warnIfNotificationsAreHidden() {
-+        val enabled = runCatching { notificationService.areNotificationsEnabled() }.getOrDefault(true)
-+        if (!enabled) {
-+            logger.warn { "Notifications are disabled for this app; the foreground service notification will not be visible." }
++        if (!runCatching { notificationService.areNotificationsEnabled() }.getOrDefault(true)) {
++            logger.warn { "Notifications are disabled for this app; foreground notification may not be visible." }
 +            return
 +        }
-+        val channelImportance = runCatching { notificationChannel.importance }.getOrNull() ?: return
-+        if (channelImportance == NotificationManager.IMPORTANCE_NONE) {
-+            logger.warn { "Notification channel $NOTIFICATION_CHANNEL_ID is blocked by the user; the foreground service notification will not be visible." }
++        if (runCatching { notificationChannel.importance }.getOrNull() == NotificationManager.IMPORTANCE_NONE) {
++            logger.warn { "Notification channel $channelId is blocked by the user." }
 +        }
-+    }
-+
+     }
+ 
      /**
-      * build notification and show it initially
-      */
--- 
-2.43.0
-
