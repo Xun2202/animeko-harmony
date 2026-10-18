@@ -33,8 +33,10 @@ abis=$(unzip -Z1 "$apk" | awk -F/ '$1=="lib" && NF>=3 {print $2}' | sort -u | pa
 [[ $abis == arm64-v8a ]] || { echo "unexpected native ABI set: ${abis:-none}" >&2; exit 1; }
 
 cert_output=$("$tools/apksigner" verify --print-certs "$apk")
-[[ $(printf '%s\n' "$cert_output" | grep -Ec '^Signer #[0-9]+ certificate SHA-256 digest:') == 1 ]] || { echo "expected exactly one APK signer" >&2; exit 1; }
-printf '%s\n' "$cert_output" | grep -qi '^Signer #1 certificate SHA-256 digest: 50907c1de76a92991797ed8c5c1feb5df56e180634738b538bddc81735dda10b$' || {
+# Newer build-tools can repeat the signer for multiple SDK ranges.
+cert_digests=$(printf '%s\n' "$cert_output" | sed -nE 's/^.*certificate SHA-256 digest: ([0-9a-fA-F]{64})[[:space:]]*$/\1/p' | tr '[:upper:]' '[:lower:]' | sort -u)
+printf 'Certificate SHA-256: %s\n' "${cert_digests:-not found}"
+[[ $cert_digests == 50907c1de76a92991797ed8c5c1feb5df56e180634738b538bddc81735dda10b ]] || {
     echo "APK signer certificate SHA-256 does not match expected certificate" >&2; exit 1;
 }
 
