@@ -259,7 +259,7 @@ index 000000000..4defb382f
 +        .distinctUntilChanged()
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
 new file mode 100644
-index 000000000..754e07ed2
+index 000000000..1750c041e
 --- /dev/null
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
 @@ -0,0 +1,93 @@
@@ -314,7 +314,7 @@ index 000000000..754e07ed2
 +                HttpCacheService.backgroundTimedOut,
 +                HttpCacheService.isRunning,
 +            ) { shouldRun, processState, timedOut, serviceRunning ->
-+                ServiceControlState(shouldRun, processState, timedOut, serviceRunning)
++                HttpCacheServiceControlState(shouldRun, processState, timedOut, serviceRunning)
 +            }
 +                .distinctUntilChanged()
 +                .onEach { (shouldRun, processState, timedOut, serviceRunning) ->
@@ -350,7 +350,7 @@ index 000000000..754e07ed2
 +    }
 +}
 +
-+private data class ServiceControlState(
++private data class HttpCacheServiceControlState(
 +    val shouldRun: Boolean,
 +    val processState: Lifecycle.State,
 +    val timedOut: Boolean,

@@ -78,7 +78,7 @@ index 3945ef970..9ac33cf69 100644
          super.onDestroy()
      }
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
-index 9062d87cc..f73a721fe 100644
+index ed0f0cd68..1993b219b 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
 @@ -39,6 +39,11 @@ class HttpCacheServiceController(
