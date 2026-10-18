@@ -1,21 +1,10 @@
-From 53661d8f129b13e59191b51d6ae2ebf9ef8b3505 Mon Sep 17 00:00:00 2001
-From: Xun2202 <xun2202@users.noreply.github.com>
-Date: Fri, 2 Oct 2026 06:14:42 +0000
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Xun2202 <98207886+Xun2202@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 04:55:21 +0000
 Subject: [PATCH] android: ask for battery optimisation exemption and hold a
  wake lock while caching
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-A dataSync foreground service got the notification shown on HarmonyOS
-卓易通, but a lock-screen screenshot two minutes after backgrounding
-shows the notification frozen at its last value while FlClash's keeps
-updating: the process was still suspended. FlClash requests
-REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; do the same from
-HttpCacheServiceController the first time a download starts while the
-app is in the foreground (never again once granted), and hold a partial
-wake lock for the lifetime of HttpCacheService. This build is not
-distributed through Play, so the policy lint (BatteryLife) does not apply.
+Rebased for Animeko v6.3.0 while retaining the existing Harmony behavior.
 ---
  app/android/src/default/AndroidManifest.xml   |  1 +
  .../service/BatteryOptimizationExemption.kt   | 60 +++++++++++++++++++
@@ -25,7 +14,7 @@ distributed through Play, so the policy lint (BatteryLife) does not apply.
  create mode 100644 app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/BatteryOptimizationExemption.kt
 
 diff --git a/app/android/src/default/AndroidManifest.xml b/app/android/src/default/AndroidManifest.xml
-index 8a50aae..731e431 100644
+index 13ff7e253..4b52992d2 100644
 --- a/app/android/src/default/AndroidManifest.xml
 +++ b/app/android/src/default/AndroidManifest.xml
 @@ -27,6 +27,7 @@
@@ -38,7 +27,7 @@ index 8a50aae..731e431 100644
              android:maxSdkVersion="28"
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/BatteryOptimizationExemption.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/BatteryOptimizationExemption.kt
 new file mode 100644
-index 0000000..2b33128
+index 000000000..2b3312817
 --- /dev/null
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/BatteryOptimizationExemption.kt
 @@ -0,0 +1,60 @@
@@ -103,7 +92,7 @@ index 0000000..2b33128
 +    }
 +}
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
-index f38e454..19939e1 100644
+index 4defb382f..3945ef970 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheService.kt
 @@ -9,8 +9,11 @@
@@ -164,7 +153,7 @@ index f38e454..19939e1 100644
          val ids = downloadManager.downloads.value
              .filter { it.engineKey.isInProcess() }
 diff --git a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
-index 754e07e..9062d87 100644
+index 754e07ed2..9062d87cc 100644
 --- a/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
 +++ b/app/shared/app-data/src/androidMain/kotlin/domain/torrent/service/HttpCacheServiceController.kt
 @@ -61,7 +61,14 @@ class HttpCacheServiceController(
@@ -183,6 +172,3 @@ index 754e07e..9062d87 100644
                          !shouldRun && serviceRunning -> stopService()
                      }
                  }
--- 
-2.43.0
-

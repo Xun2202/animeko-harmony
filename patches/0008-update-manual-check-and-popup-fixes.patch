@@ -1,31 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Xun2202 <98207886+Xun2202@users.noreply.github.com>
-Date: Tue, 6 Oct 2026 16:49:54 +0000
+Date: Sun, 18 Oct 2026 04:55:21 +0000
 Subject: [PATCH] update: let manual checks work with auto-check off and fix
  the new-version popup
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-- The settings page's "check for updates" button went through the same
-  autoCheckUpdate gate as the automatic check, so turning automatic checks
-  off also disabled manual ones (the button flashed "checking" and fell
-  straight back to "check for updates"). Only automatic checks honour the
-  setting now, and a manual check that finds nothing says "up to date".
-- The release notes in the new-version card were a plain Column inside a
-  dialog that cannot scroll, so long notes pushed the buttons off screen.
-  The notes now scroll inside a bounded area.
-- Fork release notes list every patch plus install instructions; only the
-  "本次变更" section is a changelog. Parse that section and fall back to
-  the whole body for releases that predate it.
-- The "in-app download" switch stays enabled when automatic checks are off,
-  since manual downloads use it too; the popup's download button reads
-  "Update now" instead of "Auto-update"; "view changelog" opens the fork's
-  release page for -harmony versions.
-- Android deletes the installer of the running version at startup, as
-  desktop already did; the APK no longer lingers in cache/updates/download.
+Rebased for Animeko v6.3.0 while retaining the existing Harmony behavior.
 ---
- .../src/default/kotlin/AniApplication.kt      | 12 ++++++++
+ .../src/default/kotlin/AniApplication.kt      |  6 ++++
  .../androidMain/res/values-zh-rCN/strings.xml |  2 +-
  .../androidMain/res/values-zh-rHK/strings.xml |  2 +-
  .../androidMain/res/values-zh-rTW/strings.xml |  2 +-
@@ -34,43 +15,37 @@ Content-Transfer-Encoding: 8bit
  .../kotlin/ui/update/AppUpdateViewModel.kt    | 18 +++++++-----
  .../kotlin/ui/update/HarmonyForkUpdates.kt    | 29 +++++++++++++++++--
  .../kotlin/ui/update/NewVersionDialog.kt      | 10 ++++++-
- 9 files changed, 75 insertions(+), 19 deletions(-)
+ 9 files changed, 69 insertions(+), 19 deletions(-)
 
 diff --git a/app/android/src/default/kotlin/AniApplication.kt b/app/android/src/default/kotlin/AniApplication.kt
-index 5c7cf87..852edf9 100644
+index dcf9f608e..d151452e8 100644
 --- a/app/android/src/default/kotlin/AniApplication.kt
 +++ b/app/android/src/default/kotlin/AniApplication.kt
-@@ -36,6 +36,7 @@ import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
- import me.him188.ani.app.domain.torrent.service.AniTorrentService
+@@ -36,6 +36,7 @@ import me.him188.ani.app.domain.torrent.service.AniTorrentService
  import me.him188.ani.app.domain.torrent.service.HttpCacheServiceController
+ import me.him188.ani.app.domain.torrent.service.PikPakCacheServiceController
  import me.him188.ani.app.domain.torrent.service.TorrentServiceConnectionManager
 +import me.him188.ani.app.domain.update.UpdateManager
  import me.him188.ani.app.platform.AndroidLoggingConfigurator
  import me.him188.ani.app.platform.AppStartupTasks
  import me.him188.ani.app.platform.JvmLogHelper
-@@ -150,6 +151,17 @@ class AniApplication : Application() {
+@@ -149,6 +150,11 @@ class AniApplication : Application() {
          startupTimeMonitor.mark(StepName.Modules)
  
          val koin = getKoin()
 +
-+        // Desktop deletes the installer of the running version at startup (AniDesktop); Android never did,
-+        // so the APK stayed in cache/updates/download until the next update replaced it.
 +        scope.launch(Dispatchers.IO_) {
-+            runCatching {
-+                koin.get<UpdateManager>().deleteInstalledFiles()
-+            }.onFailure {
-+                Log.e("AniApplication", "Failed to delete installed update files", it)
-+            }
++            runCatching { koin.get<UpdateManager>().deleteInstalledFiles() }
++                .onFailure { Log.e("AniApplication", "Failed to delete installed update files", it) }
 +        }
-+
-         val analyticsInitializer = scope.launch {
-             val settingsRepository = koin.get<SettingsRepository>()
-             val userRepository = koin.get<UserRepository>()
+         val analyticsInitializer = launchTelemetryInitialization(scope, applicationContext, koin)
+ 
+         // torrent_cache rows carry no engine; MediaCacheSave.engine says which engine owns a media.
 diff --git a/app/shared/app-lang/src/androidMain/res/values-zh-rCN/strings.xml b/app/shared/app-lang/src/androidMain/res/values-zh-rCN/strings.xml
-index f6f6cc9..0f87e52 100644
+index 6999e7ea1..092c7f450 100644
 --- a/app/shared/app-lang/src/androidMain/res/values-zh-rCN/strings.xml
 +++ b/app/shared/app-lang/src/androidMain/res/values-zh-rCN/strings.xml
-@@ -611,7 +611,7 @@
+@@ -644,7 +644,7 @@
      <!-- NewVersionPopupCard -->
      <string name="settings_update_popup_new_version">新版本</string>
      <string name="settings_update_popup_see_details">查看详情</string>
@@ -80,10 +55,10 @@ index f6f6cc9..0f87e52 100644
      <string name="settings_update_popup_downloading">正在下载更新</string>
      <string name="settings_update_popup_installing">正在安装更新</string>
 diff --git a/app/shared/app-lang/src/androidMain/res/values-zh-rHK/strings.xml b/app/shared/app-lang/src/androidMain/res/values-zh-rHK/strings.xml
-index b32f030..05e189e 100644
+index 5c0984efc..6f9d4ad86 100644
 --- a/app/shared/app-lang/src/androidMain/res/values-zh-rHK/strings.xml
 +++ b/app/shared/app-lang/src/androidMain/res/values-zh-rHK/strings.xml
-@@ -573,7 +573,7 @@
+@@ -599,7 +599,7 @@
      <!-- NewVersionPopupCard -->
      <string name="settings_update_popup_new_version">新版本</string>
      <string name="settings_update_popup_see_details">查看詳情</string>
@@ -93,10 +68,10 @@ index b32f030..05e189e 100644
      <string name="settings_update_popup_downloading">正在下載更新</string>
      <string name="settings_update_popup_installing">正在安裝更新</string>
 diff --git a/app/shared/app-lang/src/androidMain/res/values-zh-rTW/strings.xml b/app/shared/app-lang/src/androidMain/res/values-zh-rTW/strings.xml
-index aba4208..2883eb8 100644
+index 7021cc94a..5907c8166 100644
 --- a/app/shared/app-lang/src/androidMain/res/values-zh-rTW/strings.xml
 +++ b/app/shared/app-lang/src/androidMain/res/values-zh-rTW/strings.xml
-@@ -573,7 +573,7 @@
+@@ -599,7 +599,7 @@
      <!-- NewVersionPopupCard -->
      <string name="settings_update_popup_new_version">新版本</string>
      <string name="settings_update_popup_see_details">查看詳情</string>
@@ -106,10 +81,10 @@ index aba4208..2883eb8 100644
      <string name="settings_update_popup_downloading">正在下載更新</string>
      <string name="settings_update_popup_installing">正在安裝更新</string>
 diff --git a/app/shared/app-lang/src/androidMain/res/values/strings.xml b/app/shared/app-lang/src/androidMain/res/values/strings.xml
-index a392d60..d7eb6ab 100644
+index 490e4350d..782e24b9c 100644
 --- a/app/shared/app-lang/src/androidMain/res/values/strings.xml
 +++ b/app/shared/app-lang/src/androidMain/res/values/strings.xml
-@@ -563,7 +563,7 @@
+@@ -596,7 +596,7 @@
      <!-- NewVersionPopupCard -->
      <string name="settings_update_popup_new_version">New Version</string>
      <string name="settings_update_popup_see_details">See details</string>
@@ -119,10 +94,10 @@ index a392d60..d7eb6ab 100644
      <string name="settings_update_popup_downloading">Downloading Update</string>
      <string name="settings_update_popup_installing">Installing Update</string>
 diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/settings/tabs/app/AppSettingsTab.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/settings/tabs/app/AppSettingsTab.kt
-index f6341f6..87cf83d 100644
+index fa66c3b34..697c532b0 100644
 --- a/app/shared/ui-settings/src/commonMain/kotlin/ui/settings/tabs/app/AppSettingsTab.kt
 +++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/settings/tabs/app/AppSettingsTab.kt
-@@ -160,8 +160,10 @@ import me.him188.ani.app.ui.settings.rendering.guessReleaseClass
+@@ -174,8 +174,10 @@ import me.him188.ani.app.ui.settings.rendering.guessReleaseClass
  import me.him188.ani.app.ui.settings.tabs.theme.ThemeGroup
  import me.him188.ani.app.ui.update.AppUpdateState
  import me.him188.ani.app.ui.update.AppUpdateViewModel
@@ -133,7 +108,7 @@ index f6341f6..87cf83d 100644
  import me.him188.ani.utils.platform.annotations.TestOnly
  import me.him188.ani.utils.platform.isAndroid
  import me.him188.ani.utils.platform.isDesktop
-@@ -376,9 +378,11 @@ fun SettingsScope.SoftwareUpdateGroup(
+@@ -390,9 +392,11 @@ fun SettingsScope.SoftwareUpdateGroup(
          val uriHandler = LocalUriHandler.current
          RowButtonItem(
              onClick = {
@@ -148,7 +123,7 @@ index f6341f6..87cf83d 100644
              },
              icon = { Icon(Icons.Rounded.ArrowOutward, null) },
          ) { Text(stringResource(Lang.settings_update_view_changelog)) }
-@@ -433,7 +437,7 @@ fun SettingsScope.SoftwareUpdateGroup(
+@@ -447,7 +451,7 @@ fun SettingsScope.SoftwareUpdateGroup(
                          Text(stringResource(Lang.settings_update_in_app_download_disabled))
                      }
                  },
@@ -157,7 +132,7 @@ index f6341f6..87cf83d 100644
              )
              AniAnimatedVisibility(updateSettings.inAppDownload) {
                  Column {
-@@ -477,6 +481,11 @@ fun SettingsScope.SoftwareUpdateGroup(
+@@ -491,6 +495,11 @@ fun SettingsScope.SoftwareUpdateGroup(
                          }
                      }
  
@@ -170,10 +145,10 @@ index f6341f6..87cf83d 100644
                          Text(stringResource(Lang.settings_update_check))
                      }
 diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/AppUpdateViewModel.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/AppUpdateViewModel.kt
-index fdab67c..a3b0c29 100644
+index cfcdd11ca..c22f9adbd 100644
 --- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/AppUpdateViewModel.kt
 +++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/AppUpdateViewModel.kt
-@@ -138,25 +138,29 @@ class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
+@@ -141,25 +141,29 @@ open class AppUpdateViewModel : AbstractViewModel(), KoinComponent {
                  return // 1 小时内检查过
              }
  
@@ -211,7 +186,7 @@ index fdab67c..a3b0c29 100644
  
                  updateChecker.checkLatestVersion(updateSettings.releaseClass)
 diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
-index bdb551a..90b99fa 100644
+index bdb551aec..90b99fa33 100644
 --- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
 +++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
 @@ -96,16 +96,39 @@ internal suspend fun HttpClient.getHarmonyForkLatestVersion(
@@ -258,7 +233,7 @@ index bdb551a..90b99fa 100644
   * Picks the APK for this device first and the universal APK as a fallback. Release assets are named
   * `ani-<version>-<abi>.apk`, matching the official release layout.
 diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt
-index a1bc879..3659d08 100644
+index a1bc87925..3659d08af 100644
 --- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt
 +++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/NewVersionDialog.kt
 @@ -11,6 +11,8 @@ package me.him188.ani.app.ui.update

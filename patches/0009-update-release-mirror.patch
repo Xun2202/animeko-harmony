@@ -1,24 +1,16 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Xun2202 <98207886+Xun2202@users.noreply.github.com>
-Date: Tue, 6 Oct 2026 18:30:32 +0000
+Date: Sun, 18 Oct 2026 04:55:21 +0000
 Subject: [PATCH] update: read the fork release list from the repo-branch
  mirror first
 
-Checking for updates listed the fork's releases through api.github.com,
-whose anonymous quota is 60 requests per hour per IP address. Phones
-behind carrier NAT or a shared proxy exhaust it within minutes and the
-check fails with HTTP 403.
-
-The fork's CI now mirrors the "list releases" response to the `repo`
-branch of the release repository (releases.json). Read it from
-raw.githubusercontent.com first (a plain CDN, no such quota) and fall
-back to the API when the mirror is unreachable.
+Rebased for Animeko v6.3.0 while retaining the existing Harmony behavior.
 ---
  .../kotlin/ui/update/HarmonyForkUpdates.kt    | 39 ++++++++++++++++---
  1 file changed, 33 insertions(+), 6 deletions(-)
 
 diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
-index 90b99fa..0ecf84e 100644
+index 90b99fa33..0ecf84e78 100644
 --- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
 +++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
 @@ -14,10 +14,13 @@ import io.ktor.client.request.get

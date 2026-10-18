@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       upstream_tag:
-        description: 'Animeko 官方 tag (如 v6.2.0); 留空则取最新稳定版'
+        description: 'Animeko 官方 tag (如 v6.3.0); 留空则取最新稳定版'
         required: false
         type: string
       patch_number:
@@ -219,9 +219,9 @@ jobs:
           PATCH_NUMBER: ${{ steps.version.outputs.patch_number }}
         run: |
           set -euo pipefail
-          # 「本次变更」取自 patches/CHANGELOG.md 中 "## harmony.N" 小节 (到下一个标题为止).
+          # 「本次变更」按完整上游版本和 Harmony 序号匹配，避免新稳定版复用旧版说明。
           # 应用内更新 (补丁 0008 起) 只把这一节当作更新说明显示, 所以它必须排在补丁清单之前.
-          changes="$(awk -v h="## harmony.$PATCH_NUMBER" '
+          changes="$(awk -v h="## $HARMONY_VERSION" '
             $0 == h { on = 1; next }
             on && /^#/ { exit }
             on { print }

@@ -1,15 +1,10 @@
-From a999dae8b8cb715cde5318f70974c24c03798083 Mon Sep 17 00:00:00 2001
-From: Cursor Agent <agent@cursor.local>
-Date: Wed, 30 Sep 2026 17:18:00 +0000
-Subject: [PATCH 2/2] feat(update): check the Harmony fork's GitHub releases
- for -harmony builds
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Xun2202 <98207886+Xun2202@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 04:55:20 +0000
+Subject: [PATCH] feat(update): check the Harmony fork's GitHub releases for
+ -harmony builds
 
-Fork builds are versioned <upstream>-harmony.<n>. The official update server treats
-that as a pre-release of <upstream> and offers the official APK, which cannot be
-installed over an APK signed with a different key. When the running version matches
-the fork pattern, UpdateChecker now lists the fork's GitHub releases, compares the
-(major, minor, patch, harmony) tuple, and offers the matching -arm64-v8a.apk (universal
-as fallback). The release-notes link follows the same rule.
+Rebased for Animeko v6.3.0 while retaining the existing Harmony behavior.
 ---
  .../kotlin/ui/update/HarmonyForkUpdates.kt    | 126 ++++++++++++++++++
  .../kotlin/ui/update/UpdateChecker.kt         |   7 +
@@ -19,7 +14,7 @@ as fallback). The release-notes link follows the same rule.
 
 diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
 new file mode 100644
-index 0000000..bdb551a
+index 000000000..bdb551aec
 --- /dev/null
 +++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/HarmonyForkUpdates.kt
 @@ -0,0 +1,126 @@
@@ -150,10 +145,10 @@ index 0000000..bdb551a
 +// GitHub returns ISO-8601 timestamps; the date part is all the UI shows.
 +private fun formatGitHubDate(publishedAt: String?): String = publishedAt.orEmpty().take(10)
 diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt
-index 6c07a74..14566cf 100644
+index 63ea4d890..d496817e4 100644
 --- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt
 +++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt
-@@ -39,6 +39,13 @@ class UpdateChecker {
+@@ -41,6 +41,13 @@ class UpdateChecker {
          HttpClient(getPlatformKtorEngine()) {
              expectSuccess = true
          }.use { client ->
@@ -168,7 +163,7 @@ index 6c07a74..14566cf 100644
                  return kotlin.runCatching {
                      client.getVersionFromAniServer("https://danmaku-global.myani.org/", currentVersion, releaseClass)
 diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateNotifierHost.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateNotifierHost.kt
-index 763e069..d1c2179 100644
+index 763e06980..d1c2179ae 100644
 --- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateNotifierHost.kt
 +++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateNotifierHost.kt
 @@ -151,8 +151,9 @@ fun BoxScope.UpdateNotifier(
@@ -183,6 +178,3 @@ index 763e069..d1c2179 100644
  
              when (layoutKind) {
                  UpdateNotifierLayoutKind.POPUP -> {
--- 
-2.43.0
-
